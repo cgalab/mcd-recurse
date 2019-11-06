@@ -1,6 +1,26 @@
 #include "geom.h"
 #include "triangle.h"
 
+#ifndef NDEBUG
+/** Local sanity check. */
+void
+Edge::
+assert_valid() const {
+  assert(!opposite || this == opposite->opposite);
+  assert(this == prev->next);
+  assert(this == next->prev);
+  assert(!opposite || v == opposite->prev->v);
+  if (is_constrained) {
+    assert(this == prev_constrained->next_constrained);
+    assert(this == next_constrained->prev_constrained);
+    assert(!opposite || v == opposite->prev_constrained->v);
+  } else {
+    assert(prev_constrained == NULL);
+    assert(next_constrained == NULL);
+  }
+}
+#endif
+
 DECL::
 DECL(const VertexList& vertices) {
   decl_triangulate(vertices);
@@ -41,7 +61,7 @@ void
 DECL::
 decl_triangulate_process(const VertexList& vertices, const struct triangulateio& tout) {
   const int next_edge_offset[] = {1,2,0};
-  const int prev_edge_offset[] = {2,0,1};
+  const int prev_edge_offset[] = {2,0,1}; /* also same as vertex index that an edge points towards */
 
   int num_t = tout.numberoftriangles;
   int num_e = tout.numberofedges;
@@ -54,10 +74,6 @@ decl_triangulate_process(const VertexList& vertices, const struct triangulateio&
   int *nptr = tout.neighborlist;
   int edges_on_ch = 0;
   for (int i=0; i<num_t; ++i) {
-    int v0 = *(tptr++);
-    int v1 = *(tptr++);
-    int v2 = *(tptr++);
-
     for (int j=0; j<3; ++j) {
       Edge *buddy = NULL;
       if (*nptr >= 0) {
@@ -66,10 +82,13 @@ decl_triangulate_process(const VertexList& vertices, const struct triangulateio&
       } else {
         ++edges_on_ch;
       }
-      edges.emplace_back(Edge(edge_end+next_edge_offset[j], edge_end+prev_edge_offset[j], buddy));
+      int edge_points_to_vertex_idx = tptr[ prev_edge_offset[j] ];
+      const Vertex *edge_points_to_vertex = &vertices[edge_points_to_vertex_idx];
+      edges.emplace_back(Edge(edge_end+next_edge_offset[j], edge_end+prev_edge_offset[j], buddy, edge_points_to_vertex));
       ++nptr;
     }
     edge_end += 3;
+    tptr += 3;
   }
   assert(num_ch_v == edges_on_ch);
   assert(tptr == tout.trianglelist + 3*num_t);
@@ -112,15 +131,34 @@ decl_triangulate(const VertexList& vertices) {
   my_free_c(tout.segmentmarkerlist);
 }
 
+/** Runs validity checks for all the edges */
+#ifndef NDEBUG
+void
+DECL::
+assert_valid() const {
+  for (const auto &e : edges) {
+    e.assert_valid();
+  }
+}
+#endif
+
+
 std::ostream& operator<<(std::ostream& os, const DECL& d) {
   os << "DECL" << std::endl;
   os << " #edges: " << d.edges.size() << std::endl;
   for (unsigned i=0; i<d.edges.size(); ++i) {
-      os << "   edge #" << i
-         << ": n/p/o: " << (d.edges[i].next - &d.edges[0])
-         << "; " << (d.edges[i].prev - &d.edges[0])
-         << "; " << (d.edges[i].opposite ? (d.edges[i].opposite - &d.edges[0]) : -1 )
-         << std::endl;
+    const Edge &e = d.edges[i];
+
+    os << "   edge #" << i
+       << ": points-to: ("
+#ifndef NDEBUG
+       << e.v->idx << ": "
+#endif
+       << e.v->x << ", " << e.v->y << ")"
+       << "; n/p/o: " << (e.next - &d.edges[0])
+       << "; " << (e.prev - &d.edges[0])
+       << "; " << (e.opposite ? (e.opposite - &d.edges[0]) : -1 )
+       << std::endl;
   }
   return os;
 }

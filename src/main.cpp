@@ -79,6 +79,7 @@ int main(int argc, char *argv[]) {
   std::unique_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
   DECL decl(*vertexlist);
   std::cout << decl << std::endl;
+  decl.assert_valid();
 
   return 0;
 }

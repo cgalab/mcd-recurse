@@ -18,7 +18,7 @@ load_vertices(std::istream& in) {
     std::stringstream ss(line);
     double x, y;
     ss >> x >> y;
-    res->emplace_back(Vertex(x,y, idx++));
+    res->emplace_back(Vertex(x, y, idx++));
   }
 
   return res;
