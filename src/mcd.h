@@ -3,7 +3,12 @@
 #include "config.h"
 
 #include "easyloggingpp/src/easylogging++.h"
+
 #include <assert.h>
+#include <random>
+
+extern std::default_random_engine random_engine;
+
 
 /** Expands to a syntactically valid empty statement.  */
 #define STMT_NIL (void)0

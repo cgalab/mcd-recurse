@@ -1,6 +1,20 @@
 #include "geom.h"
 #include "triangle.h"
 
+#include <numeric>
+
+/** Find our index (0,1,2) in a neighboring triangle as returned by triangle.
+ */
+static inline int
+tnidx_by_nidx(const int *t, int needle) {
+  int r = t[0] == needle ? 0 :
+      t[1] == needle ? 1 :
+      t[2] == needle ? 2 : -1;
+  assert(r >= 0);
+  return r;
+}
+
+
 #ifndef NDEBUG
 /** Local sanity check. */
 void
@@ -21,8 +35,10 @@ assert_valid() const {
 }
 #endif
 
+/** Initialize the DECL with the vertices and a triangulation of their CH */
 DECL::
-DECL(const VertexList& vertices) {
+DECL(const VertexList& vertices)
+: vertex_base_ptr(&vertices[0]) {
   decl_triangulate(vertices);
 }
 
@@ -42,17 +58,6 @@ decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin) 
     *(dp++) = vertices[i].y;
   }
   assert(dp == tin.pointlist + tin.numberofpoints*2);
-}
-
-/** Find our index (0,1,2) in a neighboring triangle as returned by triangle.
- */
-static inline int
-tnidx_by_nidx(const int *t, int needle) {
-  int r = t[0] == needle ? 0 :
-      t[1] == needle ? 1 :
-      t[2] == needle ? 2 : -1;
-  assert(r >= 0);
-  return r;
 }
 
 /** Process triangle's in/out data structure and create the DECL
@@ -94,6 +99,8 @@ decl_triangulate_process(const VertexList& vertices, const struct triangulateio&
   assert(tptr == tout.trianglelist + 3*num_t);
   assert(nptr == tout.neighborlist + 3*num_t);
   assert(edge_end == &edges[num_halfedges]);
+
+  num_faces = num_t;
 }
 
 /** Triangulare the pointset and create the DECL
@@ -131,6 +138,29 @@ decl_triangulate(const VertexList& vertices) {
   my_free_c(tout.segmentmarkerlist);
 }
 
+
+/** unconstrain all edges for which this is possible. */
+void
+DECL::
+unconstrain_all() {
+  std::vector<int> edge_index(edges.size());
+  std::iota (std::begin(edge_index), std::end(edge_index), 0);
+
+  std::shuffle(std::begin(edge_index), std::end(edge_index), random_engine);
+
+  for (const int idx : edge_index) {
+    Edge& e = edges[idx];
+
+    /* Only check one edge of each half-edge-pair */
+    if (e.get_opposite() == NULL) continue;
+    if (e.get_opposite() < &e) continue;
+
+    if (! e.can_unconstrain()) continue;
+    e.unconstrain();
+    --num_faces;
+  }
+}
+
 /** Runs validity checks for all the edges */
 #ifndef NDEBUG
 void
@@ -142,6 +172,22 @@ assert_valid() const {
 }
 #endif
 
+/** Write the (constraint) segments to the output stream in obj format
+ */
+void
+DECL::
+write_obj_segments(std::ostream &o) const {
+  for (const auto &e : edges) {
+    if (!e.get_is_constrained()) continue;
+    if (e.get_opposite() && e.get_opposite() < &e) continue;
+
+    o << "l "
+      << (e.get_tail() - vertex_base_ptr)+1
+      << " "
+      << (e.get_head() - vertex_base_ptr)+1
+      << std::endl;
+  }
+}
 
 std::ostream& operator<<(std::ostream& os, const DECL& d) {
   os << "DECL" << std::endl;

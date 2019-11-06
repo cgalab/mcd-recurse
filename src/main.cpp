@@ -7,6 +7,7 @@
 
 INITIALIZE_EASYLOGGINGPP
 unsigned DBG_INDENT_CTR = 0;
+std::default_random_engine random_engine;
 
 static void
 setup_logging(int argc, char* argv[]) {
@@ -21,20 +22,26 @@ setup_logging(int argc, char* argv[]) {
 [[noreturn]]
 static void
 usage(const char *progname, int err) {
-  FILE *f = err ? stderr : stdout;
+  std::ostream &f = err ? std::cerr : std::cout;
 
-  fprintf(f,"Usage: %s [options] <INPUT> <OUTPUT>\n", progname);
+  f << "Usage: " << progname << "[options] <INPUT> <OUTPUT>" << std::endl
+    << "  Options" << std::endl
+    << "    --seed SEED   seed of the RNG" << std::endl
+  ;
   exit(err);
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "h";
+  const char * const short_options = "hS:";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
+    { "seed"        , required_argument, 0, 'S'},
     { 0, 0, 0, 0}
   };
 
   setup_logging(argc, argv);
+
+  long seed = std::random_device("/dev/urandom")();
 
   while (1) {
     int option_index = 0;
@@ -44,6 +51,10 @@ int main(int argc, char *argv[]) {
     switch (r) {
       case 'h':
         usage(argv[0], 0);
+        break;
+
+      case 'S':
+        seed = atol(optarg);
         break;
 
       default:
@@ -76,10 +87,16 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  random_engine.seed(seed);
+  std::cout << "random_seed: " << seed << std::endl << std::flush;
+
   std::unique_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
   DECL decl(*vertexlist);
-  std::cout << decl << std::endl;
   decl.assert_valid();
+  decl.unconstrain_all();
+  decl.assert_valid();
+  std::cout << "num_cvx_areas: " << decl.get_num_faces() << std::endl;
+  decl.write_obj_segments(*out);
 
   return 0;
 }

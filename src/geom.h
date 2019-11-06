@@ -22,6 +22,17 @@ class Vertex {
     , y(y_)
   {}
 #endif
+
+  /** determine Vertices' a, b, c's relative orientation.
+   *
+   * returns 1 if they are counterclockwise, 0 if collinear, -1 if clockwise.
+   */
+  static int orientation(const Vertex& a, const Vertex &b, const Vertex &c) {
+    double det1 = (a.x - c.x) * (b.y - c.y);
+    double det2 = (a.y - c.y) * (b.x - c.x);
+    double det = det1 - det2;
+    return signum(det);
+  }
 };
 using VertexList = std::vector<Vertex>;
 
@@ -71,10 +82,13 @@ public:
 
 protected:
   bool check_unconstrain_at_tip() const {
-    const Vertex *tip = v;
-    const Vertex *left = next_constrained->v;
-    const Vertex *right = opposite->prev_constrained->prev_constrained->v;
-    return false;
+    assert(opposite);
+
+    const Vertex &tip = *v;
+    const Vertex &left = *next_constrained->v;
+    const Vertex &right = *opposite->prev_constrained->prev_constrained->v;
+
+    return (Vertex::orientation(right, tip, left) >= 0);
   }
 public:
   /** Check whether this edge can be removed/unconstrained
@@ -84,8 +98,41 @@ public:
    * at their tip or tail.
    */
   bool can_unconstrain() const {
-    if (opposite == NULL) return false;
+    assert(is_constrained);
+    return (opposite != NULL &&
+      check_unconstrain_at_tip() &&
+      opposite->check_unconstrain_at_tip());
   }
+
+  bool get_is_constrained() const { return is_constrained; };
+  Edge* get_opposite() const { return opposite; };
+  const Vertex* get_head() const { return v; };
+  const Vertex* get_tail() const { return prev->v; };
+
+
+  /** Mark this edge as not a constrained edge.
+   *
+   * Update pointers to next constrained in neighbors.
+   */
+  void unconstrain() {
+    assert(can_unconstrain());
+    assert_valid();
+
+    next_constrained->prev_constrained = opposite->prev_constrained;
+    prev_constrained->next_constrained = opposite->next_constrained;
+
+    opposite->next_constrained->prev_constrained = prev_constrained;
+    opposite->prev_constrained->next_constrained = next_constrained;
+
+    is_constrained = false;
+    prev_constrained = NULL;
+    next_constrained = NULL;
+    opposite->is_constrained = false;
+    opposite->prev_constrained = NULL;
+    opposite->next_constrained = NULL;
+
+    assert_valid();
+  };
 
 #ifndef NDEBUG
   void assert_valid() const;
@@ -101,15 +148,22 @@ class DECL {
   void decl_triangulate_process(const VertexList& vertices, const struct triangulateio& tout);
   void decl_triangulate(const VertexList& vertices);
 
+  const Vertex * const vertex_base_ptr;
+  int num_faces = 0;
 public:
-  /** Initialize the DECL with the vertices and a triangulation of their CH */
   DECL(const VertexList& vertices);
+
+  void unconstrain_all();
 
 #ifndef NDEBUG
   void assert_valid() const;
 #else
   void assert_valid() const {};
 #endif
+
+  void write_obj_segments(std::ostream &o) const;
+  int get_num_faces() const { return num_faces; };
+
   friend std::ostream& operator<<(std::ostream&, const DECL&);
 };
 
