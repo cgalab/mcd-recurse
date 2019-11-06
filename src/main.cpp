@@ -1,12 +1,12 @@
-#include "config.h"
-
 #include "io.h"
+#include "geom.h"
 
 #include <fstream>
 #include <iostream>
 #include <getopt.h>
 
 INITIALIZE_EASYLOGGINGPP
+unsigned DBG_INDENT_CTR = 0;
 
 static void
 setup_logging(int argc, char* argv[]) {
@@ -76,7 +76,9 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  load_vertices(*in);
+  std::unique_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
+  DECL decl(*vertexlist);
+  std::cout << decl << std::endl;
 
   return 0;
 }

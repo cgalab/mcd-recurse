@@ -1,0 +1,10 @@
+#pragma once
+
+/** do or do not compile with debug output.
+ */
+#cmakedefine DEBUG_OUTPUT
+
+/** include filename and line numbers in log output.
+ */
+#cmakedefine DEBUG_OUTPUT_WITH_FILES
+

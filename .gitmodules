@@ -1,3 +1,6 @@
 [submodule "src/easyloggingpp"]
 	path = src/easyloggingpp
 	url = https://github.com/weaselp/easyloggingpp
+[submodule "src/triangle"]
+	path = src/triangle
+	url = git@gitlab.cosy.sbg.ac.at:cg/code/triangle.git
