@@ -80,6 +80,20 @@ public:
     , v(v_)
   {}
 
+public:
+  void print_tip_and_neighbors() const {
+    assert(opposite);
+
+    const Vertex &tip = *v;
+    const Vertex &left = *next_constrained->v;
+    const Vertex &right = *opposite->prev_constrained->prev_constrained->v;
+
+    DBG(DBG_GENERIC) << "right (" << right.x << ", " << right.y << ")";
+    DBG(DBG_GENERIC) << "tip   (" << tip.x << ", " << tip.y << "); tail (" << get_tail()->x << ", " << get_tail()->y << ")";
+    DBG(DBG_GENERIC) << "left  (" << left.x << ", " << left.y << ")";
+    DBG(DBG_GENERIC) << "det (r,t,l)" << Vertex::orientation(right, tip, left);
+  }
+
 protected:
   bool check_unconstrain_at_tip() const {
     assert(opposite);
@@ -88,7 +102,7 @@ protected:
     const Vertex &left = *next_constrained->v;
     const Vertex &right = *opposite->prev_constrained->prev_constrained->v;
 
-    return (Vertex::orientation(right, tip, left) >= 0);
+    return ((&left != &right) && Vertex::orientation(right, tip, left) >= 0);
   }
 public:
   /** Check whether this edge can be removed/unconstrained

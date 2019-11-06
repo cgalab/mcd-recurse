@@ -181,10 +181,13 @@ write_obj_segments(std::ostream &o) const {
     if (!e.get_is_constrained()) continue;
     if (e.get_opposite() && e.get_opposite() < &e) continue;
 
+    int tail_idx = (e.get_tail() - vertex_base_ptr)+1;
+    int head_idx = (e.get_head() - vertex_base_ptr)+1;
+
     o << "l "
-      << (e.get_tail() - vertex_base_ptr)+1
+      << tail_idx
       << " "
-      << (e.get_head() - vertex_base_ptr)+1
+      << head_idx
       << std::endl;
   }
 }
