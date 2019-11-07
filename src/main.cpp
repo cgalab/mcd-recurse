@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <chrono>
 #include <getopt.h>
 
 INITIALIZE_EASYLOGGINGPP
@@ -26,29 +27,41 @@ usage(const char *progname, int err) {
 
   f << "Usage: " << progname << "[options] <INPUT> <OUTPUT>" << std::endl
     << "  Options" << std::endl
-    << "    --seed SEED   seed of the RNG" << std::endl
-    << "    --full-obj    also print vertex coordinates to .obj file" << std::endl
+    << "    --seed NUM          seed of the RNG" << std::endl
+    << "    --full-obj          also print vertex coordinates to .obj file" << std::endl
+    << "    --to-beat     NUM   return when a better answer is found" << std::endl
+    << "    --lower-bound NUM   return immediately when this is reached" << std::endl
+    << "    --min-runs NUM      Do at least NUM runs/attempts at solving this" << std::endl
+    << "    --max-time NUM      Do not start a new run after NUM seconds (overrides min-runs)" << std::endl
   ;
   exit(err);
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:";
+  const char * const short_options = "hS:fb:B:M:T:";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
     { "full-obj"    , no_argument      , 0, 'f'},
+    { "to-beat"     , required_argument, 0, 'b'},
+    { "lower-bound" , required_argument, 0, 'B'},
+    { "min-runs"    , required_argument, 0, 'M'},
+    { "max-time"    , required_argument, 0, 'T'},
     { 0, 0, 0, 0}
   };
 
   setup_logging(argc, argv);
 
-  long seed = std::random_device("/dev/urandom")();
+  long requested_seed = 0;
   bool full_obj = false;
+  int to_beat = 0;
+  int lower_bound = 0;
+  int min_runs = 10;
+  int max_time = 0;
 
   while (1) {
     int option_index = 0;
-    int r = getopt_long(argc, argv, "hc:f", long_options, &option_index);
+    int r = getopt_long(argc, argv, short_options, long_options, &option_index);
 
     if (r == -1) break;
     switch (r) {
@@ -57,11 +70,27 @@ int main(int argc, char *argv[]) {
         break;
 
       case 'S':
-        seed = atol(optarg);
+        requested_seed = atol(optarg);
         break;
 
       case 'f':
         full_obj = true;
+        break;
+
+      case 'b':
+        to_beat = atol(optarg);
+        break;
+
+      case 'B':
+        lower_bound = atol(optarg);
+        break;
+
+      case 'M':
+        min_runs = atol(optarg);
+        break;
+
+      case 'T':
+        max_time = atol(optarg);
         break;
 
       default:
@@ -94,16 +123,60 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  random_engine.seed(seed);
-  std::cout << "random_seed: " << seed << std::endl << std::flush;
 
   std::unique_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
-  DECL decl(*vertexlist);
-  decl.assert_valid();
-  decl.unconstrain_all();
-  decl.assert_valid();
-  std::cout << "num_cvx_areas: " << decl.get_num_faces() << std::endl;
-  decl.write_obj_segments(full_obj ? &*vertexlist : NULL, *out);
 
-  return 0;
+  auto start_time = std::chrono::system_clock::now();
+  auto end_time = start_time + std::chrono::seconds(max_time);
+
+  int num_iters = 0;
+  int best_seed = 0;
+  int best_num_faces = 0;
+  std::stringstream obj_content;
+
+  bool have_solution = false;
+  std::random_device real_rng("/dev/urandom");
+  while (1) {
+    int seed = requested_seed != 0 ? requested_seed : real_rng();
+    random_engine.seed(seed);
+
+    DECL decl(*vertexlist);
+    decl.assert_valid();
+    decl.unconstrain_all();
+    decl.assert_valid();
+
+    ++num_iters;
+
+    int this_num_faces = decl.get_num_faces();
+
+    if ((this_num_faces < to_beat || to_beat == 0)
+      || requested_seed != 0
+      ) {
+      have_solution = true;
+
+      best_num_faces = this_num_faces;
+      best_seed = seed;
+      std::stringstream().swap(obj_content); // clear obj_content
+      decl.write_obj_segments(full_obj ? &*vertexlist : NULL, obj_content);
+    }
+
+    if ( (requested_seed != 0)
+      || (this_num_faces <= lower_bound)
+      || (have_solution && num_iters >= min_runs)
+      || (max_time != 0 && std::chrono::system_clock::now() > end_time)
+      ) {
+      break;
+    };
+  }
+
+  if (best_num_faces > 0) {
+    std::cout << "random_seed: " << best_seed << std::endl << std::flush;
+    std::cout << "num_cvx_areas: " << best_num_faces << std::endl;
+    std::cout << "num_iters: " << num_iters << std::endl;
+    *out << obj_content.rdbuf();
+    return 0;
+  } else {
+    std::cerr << "No decomposition found." << std::endl;
+    return 1;
+  }
 }
