@@ -173,10 +173,17 @@ assert_valid() const {
 #endif
 
 /** Write the (constraint) segments to the output stream in obj format
+ *
+ * If we have a vertex list, also print those.
  */
 void
 DECL::
-write_obj_segments(std::ostream &o) const {
+write_obj_segments(const VertexList * vertices, std::ostream &o) const {
+  if (vertices) {
+    for (const auto &v : *vertices) {
+      o << "v " << v.x << " " << v.y << " 0" << std::endl;
+    }
+  }
   for (const auto &e : edges) {
     if (!e.get_is_constrained()) continue;
     if (e.get_opposite() && e.get_opposite() < &e) continue;

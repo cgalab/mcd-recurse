@@ -27,6 +27,7 @@ usage(const char *progname, int err) {
   f << "Usage: " << progname << "[options] <INPUT> <OUTPUT>" << std::endl
     << "  Options" << std::endl
     << "    --seed SEED   seed of the RNG" << std::endl
+    << "    --full-obj    also print vertex coordinates to .obj file" << std::endl
   ;
   exit(err);
 }
@@ -36,16 +37,18 @@ int main(int argc, char *argv[]) {
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
+    { "full-obj"    , no_argument      , 0, 'f'},
     { 0, 0, 0, 0}
   };
 
   setup_logging(argc, argv);
 
   long seed = std::random_device("/dev/urandom")();
+  bool full_obj = false;
 
   while (1) {
     int option_index = 0;
-    int r = getopt_long(argc, argv, "hc:", long_options, &option_index);
+    int r = getopt_long(argc, argv, "hc:f", long_options, &option_index);
 
     if (r == -1) break;
     switch (r) {
@@ -55,6 +58,10 @@ int main(int argc, char *argv[]) {
 
       case 'S':
         seed = atol(optarg);
+        break;
+
+      case 'f':
+        full_obj = true;
         break;
 
       default:
@@ -96,7 +103,7 @@ int main(int argc, char *argv[]) {
   decl.unconstrain_all();
   decl.assert_valid();
   std::cout << "num_cvx_areas: " << decl.get_num_faces() << std::endl;
-  decl.write_obj_segments(*out);
+  decl.write_obj_segments(full_obj ? &*vertexlist : NULL, *out);
 
   return 0;
 }

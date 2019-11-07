@@ -175,7 +175,7 @@ public:
   void assert_valid() const {};
 #endif
 
-  void write_obj_segments(std::ostream &o) const;
+  void write_obj_segments(const VertexList * vertices, std::ostream &o) const;
   int get_num_faces() const { return num_faces; };
 
   friend std::ostream& operator<<(std::ostream&, const DECL&);
