@@ -180,7 +180,7 @@ public:
   DECL(const VertexList& vertices);
 
   void unconstrain_all();
-  void reset();
+  void reset_constraints();
 
 #ifndef NDEBUG
   void assert_valid() const;

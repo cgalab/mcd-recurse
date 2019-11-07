@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
       */
       break;
     };
-    decl.reset();
+    decl.reset_constraints();
   }
 
   if (best_num_faces > 0) {

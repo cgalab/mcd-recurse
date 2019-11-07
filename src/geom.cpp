@@ -165,7 +165,7 @@ unconstrain_all() {
 /** Mark all edges as constrained again, resetting everything. */
 void
 DECL::
-reset() {
+reset_constraints() {
   for (auto &e : edges) {
     e.reset_all_constraints();
   }
