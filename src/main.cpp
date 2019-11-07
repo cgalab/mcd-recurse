@@ -136,11 +136,12 @@ int main(int argc, char *argv[]) {
 
   bool have_solution = false;
   std::random_device real_rng("/dev/urandom");
-  while (1) {
-    int seed = requested_seed != 0 ? requested_seed : real_rng();
-    random_engine.seed(seed);
+  int seed = requested_seed != 0 ? requested_seed : real_rng();
+  std::cout << "random_seed: " << seed << std::endl << std::flush;
+  random_engine.seed(seed);
 
-    DECL decl(*vertexlist);
+  DECL decl(*vertexlist);
+  while (1) {
     decl.assert_valid();
     decl.unconstrain_all();
     decl.assert_valid();
@@ -149,28 +150,29 @@ int main(int argc, char *argv[]) {
 
     int this_num_faces = decl.get_num_faces();
 
-    if ((this_num_faces < to_beat || to_beat == 0)
-      || requested_seed != 0
-      ) {
+    if (this_num_faces < to_beat || to_beat == 0) {
       have_solution = true;
 
       best_num_faces = this_num_faces;
-      best_seed = seed;
       std::stringstream().swap(obj_content); // clear obj_content
       decl.write_obj_segments(full_obj ? &*vertexlist : NULL, obj_content);
     }
 
-    if ( (requested_seed != 0)
-      || (this_num_faces <= lower_bound)
+    if ( (this_num_faces <= lower_bound)
       || (have_solution && num_iters >= min_runs)
       || (max_time != 0 && std::chrono::system_clock::now() > end_time)
       ) {
+      /*
+      std::cerr << "a: " << (this_num_faces <= lower_bound) << std::endl;
+      std::cerr << "b: " << (have_solution && num_iters >= min_runs) << std::endl;
+      std::cerr << "c: " << (max_time != 0 && std::chrono::system_clock::now() > end_time) << std::endl;
+      */
       break;
     };
+    decl.reset();
   }
 
   if (best_num_faces > 0) {
-    std::cout << "random_seed: " << best_seed << std::endl << std::flush;
     std::cout << "num_cvx_areas: " << best_num_faces << std::endl;
     std::cout << "num_iters: " << num_iters << std::endl;
     *out << obj_content.rdbuf();

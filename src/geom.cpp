@@ -100,6 +100,7 @@ decl_triangulate_process(const VertexList& vertices, const struct triangulateio&
   assert(nptr == tout.neighborlist + 3*num_t);
   assert(edge_end == &edges[num_halfedges]);
 
+  num_triangles = num_t;
   num_faces = num_t;
 }
 
@@ -159,6 +160,16 @@ unconstrain_all() {
     e.unconstrain();
     --num_faces;
   }
+}
+
+/** Mark all edges as constrained again, resetting everything. */
+void
+DECL::
+reset() {
+  for (auto &e : edges) {
+    e.reset_all_constraints();
+  }
+  num_faces = num_triangles;
 }
 
 /** Runs validity checks for all the edges */

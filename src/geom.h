@@ -148,6 +148,17 @@ public:
     assert_valid();
   };
 
+  /** This is run during DECL reset which will mark all edges as constrained.
+   *
+   * Mark this edge constrained, and set next_constrained/prev_constrained to
+   * next/prev as they soon will be constrained even if they aren't yet.
+   */
+  void reset_all_constraints() {
+    is_constrained = true;
+    prev_constrained = prev;
+    next_constrained = next;
+  }
+
 #ifndef NDEBUG
   void assert_valid() const;
 #else
@@ -163,11 +174,13 @@ class DECL {
   void decl_triangulate(const VertexList& vertices);
 
   const Vertex * const vertex_base_ptr;
+  int num_triangles = 0;
   int num_faces = 0;
 public:
   DECL(const VertexList& vertices);
 
   void unconstrain_all();
+  void reset();
 
 #ifndef NDEBUG
   void assert_valid() const;
