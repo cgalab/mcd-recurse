@@ -27,6 +27,13 @@ extern std::default_random_engine random_engine;
 /*
 */
 
+#ifndef NDEBUG
+  #define DEBUG_STMT(x) x
+#else
+  #define DEBUG_STMT(x) STMT_NIL
+#endif
+
+
 #ifdef DEBUG_OUTPUT
   extern unsigned DBG_INDENT_CTR;
   inline void DBG_INDENT_INC() { ++DBG_INDENT_CTR; }

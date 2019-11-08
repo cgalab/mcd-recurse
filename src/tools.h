@@ -97,3 +97,8 @@ my_malloc_c(size_t size) {
   free(p); \
   p = NULL; \
   STMT_END
+
+
+/** compiler hints */
+#define LIKELY(condition) __builtin_expect(static_cast<bool>(condition), 1)
+#define UNLIKELY(condition) __builtin_expect(static_cast<bool>(condition), 0)

@@ -16,7 +16,8 @@ public:
 
 private:
   /* When shooting holes in the DECL, we store information here */
-  bool vertex_to_be_removed;
+  bool vertex_to_be_removed = false;
+  bool vertex_on_removal_boundary = false;
 
 public:
 #ifndef NDEBUG
@@ -24,14 +25,12 @@ public:
   Vertex(double x_, double y_, int idx_)
     : x(x_)
     , y(y_)
-    , vertex_to_be_removed(false)
     , idx(idx_)
   {}
 #else
   Vertex(double x_, double y_, int)
     : x(x_)
     , y(y_)
-    , vertex_to_be_removed(false)
   {}
 #endif
 
@@ -65,42 +64,25 @@ class Edge {
   friend class DECL;
   friend std::ostream& operator<<(std::ostream&, const DECL&);
 
-  bool is_constrained;    /** Whether this is a constrained edge, i.e., one that is a boundary of a face in our convex decomposition */
-  Edge *opposite;         /** Pointer to the buddy of this edge.  NULL indicates that this edge is on the CH. */
-  Edge *next;             /** Pointer to the next edge of this triangle. This edge will start at Vertex v. */
-  Edge *prev;             /** Pointer to the previous face of this triangle. */
-  Edge *next_constrained; /** If constrained, pointer to the next constrained edge of this (decomposition) face.  This edge will start at Vertex v. */
-  Edge *prev_constrained; /** If constrained, pointer to the previous constrained edge of this (decomposition) face. */
-  Vertex *v;              /** Vertex this edge points to.  Tail of prev and prev_constrained. */
-  bool triangle_to_be_removed; /** During hole shooting, we use this as a flag. */
+  bool is_constrained = 1; /** Whether this is a constrained edge, i.e., one that is a boundary of a face in our convex decomposition */
+  Edge *opposite;          /** Pointer to the buddy of this edge.  NULL indicates that this edge is on the CH. */
+  Edge *next;              /** Pointer to the next edge of this triangle. This edge will start at Vertex v. */
+  Edge *prev;              /** Pointer to the previous face of this triangle. */
+  Edge *next_constrained;  /** If constrained, pointer to the next constrained edge of this (decomposition) face.  This edge will start at Vertex v. */
+  Edge *prev_constrained;  /** If constrained, pointer to the previous constrained edge of this (decomposition) face. */
+  Vertex *v;               /** Vertex this edge points to.  Tail of prev and prev_constrained. */
+  bool triangle_to_be_removed = false; /** During hole shooting, we use this as a flag. */
 #ifndef NDEBUG
   const int idx;
 #endif
 public:
-/*
-  Edge()
-    : is_constrained(0)
-    , opposite(0)
-    , next(0)
-    , prev(0)
-    , next_constrained(0)
-    , prev_constrained(0)
-    , v(NULL)
-  {}
-*/
-  Edge(Edge *next_, Edge *prev_, Edge *opposite_, Vertex *v_
-#ifndef NDEBUG
-  , int idx_
-#endif
-  )
-    : is_constrained(1)
-    , opposite(opposite_)
+  Edge(Edge *next_, Edge *prev_, Edge *opposite_, Vertex *v_, [[maybe_unused]] int idx_)
+    : opposite(opposite_)
     , next(next_)
     , prev(prev_)
     , next_constrained(next_)
     , prev_constrained(prev_)
     , v(v_)
-    , triangle_to_be_removed(false)
 #ifndef NDEBUG
     , idx(idx_)
 #endif
@@ -144,7 +126,7 @@ public:
       opposite->check_unconstrain_at_tip());
   }
 
-  Vertex* get_tail() const { return prev->v; };
+  Vertex* get_tail() const { return prev->v; }
 
   /** Mark this edge as not a constrained edge.
    *
@@ -168,7 +150,7 @@ public:
     opposite->next_constrained = NULL;
 
     assert_valid();
-  };
+  }
 
   /** This is run during DECL reset which will mark all edges as constrained.
    *
@@ -184,7 +166,7 @@ public:
 #ifndef NDEBUG
   void assert_valid() const;
 #else
-  void assert_valid() const {};
+  void assert_valid() const {}
 #endif
 
   friend std::ostream& operator<<(std::ostream&, const Edge&);
@@ -203,16 +185,25 @@ class DECL {
   int num_faces = 0;
 
 private:
-  std::vector<Edge*> shoot_hole_select_vertices(unsigned size);
+  std::vector<Edge*> vertices_to_remove;
+  std::vector<Edge*> removal_boundary_vertices;
+  std::vector<Edge*> halfedges_to_remove;
+  int vertices_to_remove_on_ch = 0;
+  int faces_removed = 0;
+
+  void shoot_hole_select_vertices(unsigned size);
+  void shoot_hole_identify_affected_elements_around_vertex(Edge* const e_vertex);
   void shoot_hole_list_triangles_in_face(Edge *e);
-  void shoot_hole_identify_affected_elements(std::vector<Edge*> &vertices_to_remove);
+  void shoot_hole_identify_enclosed_boundary_vertices();
+  void shoot_hole_identify_affected_elements();
 
 public:
   DECL(VertexList& vertices);
 
   void find_convex_decomposition() {
     unconstrain_all();
-    shoot_hole(sqrt(num_vertices));
+    shoot_hole(2);
+    //shoot_hole(sqrt(num_vertices));
   }
   void unconstrain_all();
   void reset_constraints();
@@ -221,12 +212,23 @@ public:
 
 #ifndef NDEBUG
   void assert_valid() const;
+  void assert_hole_shooting_reset() const {
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false
+                                                                          && e.v->vertex_to_be_removed == false
+                                                                          && e.v->vertex_on_removal_boundary == false;}) );
+    assert(vertices_to_remove.size() == 0);
+    assert(removal_boundary_vertices.size() == 0);
+    assert(halfedges_to_remove.size() == 0);
+    assert(vertices_to_remove_on_ch == 0);
+    assert(faces_removed == 0);
+  }
 #else
-  void assert_valid() const {};
+  void assert_valid() const {}
+  void assert_hole_shooting_reset() const {}
 #endif
 
   void write_obj_segments(const VertexList * vertices, std::ostream &o) const;
-  int get_num_faces() const { return num_faces; };
+  int get_num_faces() const { return num_faces; }
 
   friend std::ostream& operator<<(std::ostream&, const DECL&);
 };

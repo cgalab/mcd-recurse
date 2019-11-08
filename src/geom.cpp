@@ -171,7 +171,7 @@ void
 DECL::
 reset_constraints() {
   DBG_FUNC_BEGIN(DBG_GENERIC);
-  assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false;}) );
+  assert_hole_shooting_reset();
   for (auto &e : edges) {
     e.reset_all_constraints();
   }
@@ -182,7 +182,7 @@ reset_constraints() {
 
 /** Pick a random vertex and select size many vertices around it to form a hole
  */
-std::vector<Edge*>
+void
 DECL::
 shoot_hole_select_vertices(unsigned size) {
   DBG_FUNC_BEGIN(DBG_GENERIC);
@@ -190,9 +190,6 @@ shoot_hole_select_vertices(unsigned size) {
    * This induces a bias towards higher-degree vertices, but that's
    * probably actually good.
    */
-  assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_to_be_removed == false;}) );
-
-  std::vector <Edge*> vertices_to_remove;
   vertices_to_remove.reserve(2*size); /* Slightly larger since we might need
                                          the extra bit during the BFS, and to
                                          take care of the case of holes which
@@ -226,15 +223,15 @@ shoot_hole_select_vertices(unsigned size) {
         DBG(DBG_GENERIC) << "   Added vertex " << *vertex_candidate;
       }
       vertex_to_remove = vertex_candidate->opposite;
-    } while (vertex_to_remove && vertex_to_remove != vertices_to_remove[find_neighbors_of_vertex_idx]);
+    } while (vertex_to_remove && vertex_to_remove != vertices_to_remove[find_neighbors_of_vertex_idx] && vertices_to_remove.size() < size);
 
     /* If vertex_to_remove is NULL, we ended up on the CH.
      * Iterate around v in the other direction */
-    if (vertex_to_remove == NULL) {
+    if (UNLIKELY(vertex_to_remove == NULL)) {
       DBG(DBG_GENERIC) << "  Hit the CH, now walking around the other direction too";
       Edge *vertex_candidate = vertices_to_remove[find_neighbors_of_vertex_idx];
       DBG(DBG_GENERIC) << " At head of find-loop body, starting again at: " << *vertex_candidate;
-      while (vertex_candidate->opposite != NULL) {
+      while (vertex_candidate->opposite != NULL && vertices_to_remove.size() < size) {
         vertex_candidate = vertex_candidate->opposite->prev_constrained;
         DBG(DBG_GENERIC) << "  Iterating around vertex.  Current vertex_candidate " << *vertex_candidate;
         if (! vertex_candidate->v->vertex_to_be_removed) {
@@ -248,15 +245,113 @@ shoot_hole_select_vertices(unsigned size) {
     ++find_neighbors_of_vertex_idx;
   }
   DBG_FUNC_END(DBG_GENERIC);
-  return vertices_to_remove;
 }
 
-/** Identify all triangles in the face left of e.
+/** Identify all triangles in the face left of e_start.
  */
 void
 DECL::
-shoot_hole_list_triangles_in_face(Edge *e) {
+shoot_hole_list_triangles_in_face(Edge * const e_start) {
   DBG_FUNC_BEGIN(DBG_GENERIC);
+  if (e_start->triangle_to_be_removed) {
+    DBG(DBG_GENERIC) << "Face already marked for removal.";
+    DBG(DBG_GENERIC) << "  t: " << e_start->v->idx << ", " << e_start->next->v->idx << ", " << e_start->prev->v->idx;
+  } else {
+    DBG(DBG_GENERIC) << "Marking Face for removal.";
+    Edge *e = e_start;
+    int cnt_triangles = 0;
+    int cnt_constrained_halfedges = 0;
+    do {
+      assert(e->next->next->next == e);
+
+      DBG(DBG_GENERIC) << "  e: " << *e;
+      DBG(DBG_GENERIC) << "  t: " << e->v->idx << ", " << e->next->v->idx << ", " << e->prev->v->idx;
+      if (!e->triangle_to_be_removed) {
+        halfedges_to_remove.emplace_back(e);
+        halfedges_to_remove.emplace_back(e->next);
+        halfedges_to_remove.emplace_back(e->prev);
+        e->triangle_to_be_removed = true;
+        e->next->triangle_to_be_removed = true;
+        e->prev->triangle_to_be_removed = true;
+        DEBUG_STMT(++cnt_triangles);
+      }
+      if (!e->v->vertex_to_be_removed) {
+        if (!e->v->vertex_on_removal_boundary) {
+          DBG(DBG_GENERIC) << "Touched a boundary vertex " << *e->v;
+          e->v->vertex_on_removal_boundary = true;
+          removal_boundary_vertices.emplace_back(e);
+        } else {
+          DBG(DBG_GENERIC) << "Touched an already marked boundary vertex " << *e->v;
+        }
+      } else {
+        DBG(DBG_GENERIC) << "Touched a vertex to be removed " << *e->v;
+      }
+
+      e = e->next;
+      if (!e->is_constrained) {
+        e = e->opposite;
+        assert(e);
+      } else {
+        DEBUG_STMT(++cnt_constrained_halfedges);
+      };
+    } while (e != e_start);
+    DBG(DBG_GENERIC) << "Hit " << cnt_triangles << " triangles.";
+    DBG(DBG_GENERIC) << "Hit " << cnt_constrained_halfedges << " constrained halfedges.";
+    assert(cnt_triangles == cnt_constrained_halfedges-2);
+    ++faces_removed;
+  }
+  DBG_FUNC_END(DBG_GENERIC);
+}
+
+
+/** Identify all faces that are incident to a vertex
+ *
+ * and all all their triangles' halfedges to the halfedges_to_remove vector.
+ */
+void
+DECL::
+shoot_hole_identify_affected_elements_around_vertex(Edge* const e_vertex) {
+  DBG_FUNC_BEGIN(DBG_GENERIC);
+  DBG(DBG_GENERIC) << "Working on vertex pointed to by " << *e_vertex;
+  Edge *around_vertex_it = e_vertex;
+  do {
+    assert(around_vertex_it->v == e_vertex->v);
+
+    shoot_hole_list_triangles_in_face(around_vertex_it);
+
+    around_vertex_it = around_vertex_it->next_constrained->opposite;
+  } while (around_vertex_it && around_vertex_it != e_vertex);
+
+  /* if around_vertex_it is NULL, we ran into the CH and
+   * we have to iterate the othe way around too
+   */
+  if (UNLIKELY(around_vertex_it == NULL)) {
+    DBG(DBG_GENERIC) << "Smacked into the CH.";
+    ++vertices_to_remove_on_ch;
+    around_vertex_it = e_vertex;
+    while (around_vertex_it->opposite) {
+      around_vertex_it = around_vertex_it->opposite->prev_constrained;
+      assert(around_vertex_it->v == e_vertex->v);
+
+      shoot_hole_list_triangles_in_face(around_vertex_it);
+    }
+  }
+  DBG_FUNC_END(DBG_GENERIC);
+}
+
+/** Identify vertices which we think are on the removal boundary but which are actually fully enclosed by removed faces.
+ */
+void
+DECL::
+shoot_hole_identify_enclosed_boundary_vertices() {
+  DBG_FUNC_BEGIN(DBG_GENERIC);
+  /* Check if any of the "boundary" vertices have been entirely enclosed by faces we want to remove */
+  for (auto e_bd_v : removal_boundary_vertices) {
+    DBG(DBG_GENERIC) << "v: " << *e_bd_v->v;
+    assert(e_bd_v->is_constrained);
+    bool enclosed = true;
+
+  }
 
   DBG_FUNC_END(DBG_GENERIC);
 }
@@ -265,7 +360,7 @@ shoot_hole_list_triangles_in_face(Edge *e) {
  */
 void
 DECL::
-shoot_hole_identify_affected_elements(std::vector<Edge*> &vertices_to_remove) {
+shoot_hole_identify_affected_elements() {
  /* We iterate over all the vertices.
   *
   * Around each vertex, we iterate over all incident faces that have not yet
@@ -292,30 +387,46 @@ shoot_hole_identify_affected_elements(std::vector<Edge*> &vertices_to_remove) {
   */
   DBG_FUNC_BEGIN(DBG_GENERIC);
   for (auto e_vertex_it : vertices_to_remove) {
-    Edge * const e_vertex = e_vertex_it;
-    DBG(DBG_GENERIC) << "Working on vertex pointed to by " << *e_vertex;
-    Edge *around_vertex_it = e_vertex;
-    do {
-      assert(around_vertex_it->v == e_vertex->v);
-
-      shoot_hole_list_triangles_in_face(around_vertex_it);
-
-      around_vertex_it = around_vertex_it->next_constrained->opposite;
-    } while (around_vertex_it && around_vertex_it != e_vertex);
-    /* if around_vertex_it is NULL, we ran into the CH and
-     * we have to iterate the othe way around too
-     */
-    if (around_vertex_it == NULL) {
-      DBG(DBG_GENERIC) << "Smacked into the CH.";
-      around_vertex_it = e_vertex;
-      while (around_vertex_it->opposite) {
-        around_vertex_it = around_vertex_it->opposite->prev_constrained;
-        assert(around_vertex_it->v == e_vertex->v);
-
-        shoot_hole_list_triangles_in_face(around_vertex_it);
-      }
-    }
+    shoot_hole_identify_affected_elements_around_vertex(e_vertex_it);
   }
+  shoot_hole_identify_enclosed_boundary_vertices();
+
+  DBG(DBG_GENERIC) << "Removing " << faces_removed << " faces.";
+  DBG(DBG_GENERIC) << "Removing " << vertices_to_remove.size() << " vertices.";
+  DBG(DBG_GENERIC) << "Of those, " << vertices_to_remove_on_ch << " are on the CH.";
+  DBG(DBG_GENERIC) << "Removing " << halfedges_to_remove.size()/3 << " triangles.";
+  DBG(DBG_GENERIC) << "Removing " << halfedges_to_remove.size() << " halfedges.";
+  DBG(DBG_GENERIC) << "Found " << removal_boundary_vertices.size() << " boundary vertices:";
+
+
+  /* We deal with a planar graph, so v-e+f == 2, including the outer face.
+   *
+   * This also must hold for the area we want to remove.  So we can figure out
+   * whether it has enclosed a region without marking it for removal by a
+   * counting argument.
+   *
+   * v is simply the number of all vertices, i.e. the ones on the removal boundary + the ones to remove.
+   * f is the number of triangles, plus the outer face, plus any enclosed faces.
+   * e is tricky, since we don't know it directly.
+   *   Each internal triangulation half-edge *pairs* counts one towards e.
+   *   And each triangulation half-edge *singleton* also counts one.  So
+   *   how many singletons are there?  As many as are edges on the boundary of the
+   *   area we want to remove.  Which is the same as the number of vertices
+   *   on that boundary.  Note that this is the boundary of the area we want to
+   *   remove, not just the boundary with the remaining DECL.  So we have to
+   *   count both removal_boundary_vertices *and* vertices_to_remove_on_ch.
+   */
+  {
+    assert(halfedges_to_remove.size() % 3 ==0);
+
+    int total_num_v  = vertices_to_remove.size() + removal_boundary_vertices.size();
+    int total_num_2e = halfedges_to_remove.size() + removal_boundary_vertices.size() + vertices_to_remove_on_ch;
+    int total_num_f_accounted_for = halfedges_to_remove.size()/3;
+    assert(total_num_2e % 2 == 0);
+    int inner_faces = 1 + total_num_2e/2 - total_num_v - total_num_f_accounted_for;
+    DBG(DBG_GENERIC) << "Number of enclosed faces: " << inner_faces;
+  }
+
   DBG_FUNC_END(DBG_GENERIC);
 }
 
@@ -326,8 +437,11 @@ void
 DECL::
 shoot_hole(unsigned size) {
   DBG_FUNC_BEGIN(DBG_GENERIC);
-  std::vector <Edge*> vertices_to_remove = shoot_hole_select_vertices(size);
-  shoot_hole_identify_affected_elements(vertices_to_remove);
+
+  assert_hole_shooting_reset();
+
+  shoot_hole_select_vertices(size);
+  shoot_hole_identify_affected_elements();
 
   DBG(DBG_GENERIC) << " Iterating over vertices marked for removal:";
   for (auto e : vertices_to_remove) {
@@ -380,7 +494,7 @@ std::ostream& operator<<(std::ostream& os, const Vertex& v) {
 #ifndef NDEBUG
      << v.idx
 #endif
-     << "(" << v.x << "; " << v.y;
+     << "(" << v.x << "; " << v.y << ")";
   return os;
 }
 std::ostream& operator<<(std::ostream& os, const Edge& e) {
@@ -388,9 +502,10 @@ std::ostream& operator<<(std::ostream& os, const Edge& e) {
 #ifndef NDEBUG
      << e.idx
 #endif
-     << "(" << e.v
+     << "(" << *e.get_tail()
+     << "->" << *e.v;
 #ifndef NDEBUG
-       << "; n/p/o";
+  os << "; n/p/o";
   if (e.is_constrained) {
     os << "/N/P";
   }
@@ -414,15 +529,7 @@ std::ostream& operator<<(std::ostream& os, const DECL& d) {
   for (unsigned i=0; i<d.edges.size(); ++i) {
     const Edge &e = d.edges[i];
 
-    os << "   edge #" << i
-       << ": points-to: ("
-#ifndef NDEBUG
-       << e.v->idx << ": "
-#endif
-       << e.v->x << ", " << e.v->y << ")"
-       << "; n/p/o: " << (e.next - &d.edges[0])
-       << "; " << (e.prev - &d.edges[0])
-       << "; " << (e.opposite ? (e.opposite - &d.edges[0]) : -1 )
+    os << "   edge #" << e
        << std::endl;
   }
   return os;
