@@ -211,35 +211,18 @@ shoot_hole_select_vertices(unsigned size) {
     Edge *vertex_to_remove = vertices_to_remove[find_neighbors_of_vertex_idx];
     assert(vertex_to_remove);
     assert(vertex_to_remove->is_constrained);
+
     DBG(DBG_GENERIC) << " At head of find-loop body.  vertex_to_remove is: " << *vertex_to_remove;
-    do {
-      /* This is a neighbor of vertex_to_remove */
-      Edge *vertex_candidate = vertex_to_remove->next_constrained;
+
+    auto e_it = AroundVertexFacesIterator(vertex_to_remove);
+    for (; *e_it && vertices_to_remove.size() < size; ++e_it) {
+      Edge * vertex_candidate = (*e_it)->next_constrained;
       DBG(DBG_GENERIC) << "  Iterating around vertex.  Current vertex_candidate " << *vertex_candidate;
       if (! vertex_candidate->v->vertex_to_be_removed) {
         /* Which is not yet marked for removal.  Do that now. */
         vertices_to_remove.emplace_back(vertex_candidate);
         vertex_candidate->v->vertex_to_be_removed = true;
         DBG(DBG_GENERIC) << "   Added vertex " << *vertex_candidate;
-      }
-      vertex_to_remove = vertex_candidate->opposite;
-    } while (vertex_to_remove && vertex_to_remove != vertices_to_remove[find_neighbors_of_vertex_idx] && vertices_to_remove.size() < size);
-
-    /* If vertex_to_remove is NULL, we ended up on the CH.
-     * Iterate around v in the other direction */
-    if (UNLIKELY(vertex_to_remove == NULL)) {
-      DBG(DBG_GENERIC) << "  Hit the CH, now walking around the other direction too";
-      Edge *vertex_candidate = vertices_to_remove[find_neighbors_of_vertex_idx];
-      DBG(DBG_GENERIC) << " At head of find-loop body, starting again at: " << *vertex_candidate;
-      while (vertex_candidate->opposite != NULL && vertices_to_remove.size() < size) {
-        vertex_candidate = vertex_candidate->opposite->prev_constrained;
-        DBG(DBG_GENERIC) << "  Iterating around vertex.  Current vertex_candidate " << *vertex_candidate;
-        if (! vertex_candidate->v->vertex_to_be_removed) {
-          /* Which is not yet marked for removal.  Do that now. */
-          vertices_to_remove.emplace_back(vertex_candidate);
-          vertex_candidate->v->vertex_to_be_removed = true;
-          DBG(DBG_GENERIC) << "   Added vertex " << *vertex_candidate;
-        }
       }
     }
     ++find_neighbors_of_vertex_idx;
@@ -313,28 +296,13 @@ DECL::
 shoot_hole_identify_affected_elements_around_vertex(Edge* const e_vertex) {
   DBG_FUNC_BEGIN(DBG_GENERIC);
   DBG(DBG_GENERIC) << "Working on vertex pointed to by " << *e_vertex;
-  Edge *around_vertex_it = e_vertex;
-  do {
-    assert(around_vertex_it->v == e_vertex->v);
+  auto e_it = AroundVertexFacesIterator(e_vertex);
+  for (; *e_it; ++e_it) {
+    shoot_hole_list_triangles_in_face(*e_it);
+  }
 
-    shoot_hole_list_triangles_in_face(around_vertex_it);
-
-    around_vertex_it = around_vertex_it->next_constrained->opposite;
-  } while (around_vertex_it && around_vertex_it != e_vertex);
-
-  /* if around_vertex_it is NULL, we ran into the CH and
-   * we have to iterate the othe way around too
-   */
-  if (UNLIKELY(around_vertex_it == NULL)) {
-    DBG(DBG_GENERIC) << "Smacked into the CH.";
+  if (e_it.hit_ch()) {
     ++vertices_to_remove_on_ch;
-    around_vertex_it = e_vertex;
-    while (around_vertex_it->opposite) {
-      around_vertex_it = around_vertex_it->opposite->prev_constrained;
-      assert(around_vertex_it->v == e_vertex->v);
-
-      shoot_hole_list_triangles_in_face(around_vertex_it);
-    }
   }
   DBG_FUNC_END(DBG_GENERIC);
 }

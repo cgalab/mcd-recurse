@@ -173,6 +173,57 @@ public:
 };
 
 class DECL {
+  /** Iterate around v, returning a handle for each face.
+   *
+   * In general, we'll walk around a vertex in clockwise order.
+   *
+   * However, if we hit the Convex Hull we restart at the initial vertex
+   * and continue from there counter-clockwise.
+   */
+  class AroundVertexFacesIterator {
+    bool hit_ch_ = false;
+
+    Edge * const e_start;
+    Edge * e_cur;
+
+  public:
+    AroundVertexFacesIterator(Edge* e_vertex)
+      : e_start(e_vertex)
+      , e_cur(e_vertex)
+    {}
+
+    Edge* operator*() const { return e_cur; }
+
+    AroundVertexFacesIterator& operator++() {
+      assert(e_cur != NULL);
+      if (!hit_ch_) {
+        assert(e_cur->v == e_start->v);
+        e_cur = e_cur->next_constrained->opposite;
+        if (e_cur == e_start) {
+          e_cur = NULL;
+          return *this;
+        } else if (e_cur == NULL) {
+          DBG(DBG_GENERIC) << "Smacked into the CH.";
+          hit_ch_ = true;
+          e_cur = e_start;
+        }
+      }
+      if (hit_ch_) {
+        if (!e_cur->opposite) {
+          e_cur = NULL;
+          return *this;
+        }
+        e_cur = e_cur->opposite->prev_constrained;
+        assert(e_cur->v == e_start->v);
+      }
+      return *this;
+    }
+
+    bool hit_ch() const { return hit_ch_; }
+  };
+
+
+
   FixedVector<Edge> edges;
 
   static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
