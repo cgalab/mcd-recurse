@@ -1,5 +1,6 @@
 #include "geom.h"
 
+#include <random>
 #include <vector>
 
 template <class T>
@@ -62,6 +63,15 @@ int signum(T x, std::true_type is_signed) {
 template <typename T> inline constexpr
 int signum(T x) {
     return signum(x, std::is_signed<T>());
+}
+
+/** Get a random element from an iterator
+ */
+template<typename Iter, typename RNG>
+Iter random_element(Iter begin, Iter end, RNG& rng) {
+    std::uniform_int_distribution<> rnd_dist(0, std::distance(begin, end) - 1);
+    std::advance(begin, rnd_dist(rng));
+    return begin;
 }
 
 /** allocate memory.

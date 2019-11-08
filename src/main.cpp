@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
   DECL decl(*vertexlist);
   while (1) {
     decl.assert_valid();
-    decl.unconstrain_all();
+    decl.find_convex_decomposition();
     decl.assert_valid();
 
     ++num_iters;
