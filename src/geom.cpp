@@ -214,9 +214,8 @@ shoot_hole_select_vertices(unsigned size) {
 
     DBG(DBG_GENERIC) << " At head of find-loop body.  vertex_to_remove is: " << *vertex_to_remove;
 
-    auto e_it = AroundVertexFacesIterator(vertex_to_remove);
-    for (; *e_it && vertices_to_remove.size() < size; ++e_it) {
-      Edge * vertex_candidate = (*e_it)->next_constrained;
+    for (auto e_it = AroundVertexFacesIterator(vertex_to_remove); *e_it && vertices_to_remove.size() < size; ++e_it) {
+      Edge * vertex_candidate = e_it->next_constrained;
       DBG(DBG_GENERIC) << "  Iterating around vertex.  Current vertex_candidate " << *vertex_candidate;
       if (! vertex_candidate->v->vertex_to_be_removed) {
         /* Which is not yet marked for removal.  Do that now. */
@@ -296,6 +295,8 @@ DECL::
 shoot_hole_identify_affected_elements_around_vertex(Edge* const e_vertex) {
   DBG_FUNC_BEGIN(DBG_GENERIC);
   DBG(DBG_GENERIC) << "Working on vertex pointed to by " << *e_vertex;
+  assert(e_vertex->v->vertex_to_be_removed);
+  assert(!e_vertex->v->vertex_on_removal_boundary);
   auto e_it = AroundVertexFacesIterator(e_vertex);
   for (; *e_it; ++e_it) {
     shoot_hole_list_triangles_in_face(*e_it);
@@ -314,11 +315,37 @@ DECL::
 shoot_hole_identify_enclosed_boundary_vertices() {
   DBG_FUNC_BEGIN(DBG_GENERIC);
   /* Check if any of the "boundary" vertices have been entirely enclosed by faces we want to remove */
-  for (auto e_bd_v : removal_boundary_vertices) {
-    DBG(DBG_GENERIC) << "v: " << *e_bd_v->v;
+  auto e_bd_v_it = removal_boundary_vertices.begin();
+  while (e_bd_v_it != removal_boundary_vertices.end()) {
+    Edge * const e_bd_v = *e_bd_v_it;
+
+    DBG(DBG_GENERIC) << "v: " << e_bd_v->v;
+    assert(!e_bd_v->v->vertex_to_be_removed);
+    assert(e_bd_v->v->vertex_on_removal_boundary);
+
     assert(e_bd_v->is_constrained);
     bool enclosed = true;
+    auto e_it = AroundVertexFacesIterator(e_bd_v);
+    for (; *e_it; ++e_it) {
+      if (!e_it->triangle_to_be_removed) {
+        enclosed = false;
+        break;
+      }
+    }
+    if (enclosed) {
+      DBG(DBG_GENERIC) << "Found enclosed vertex " << *e_bd_v->v;
+      vertices_to_remove_on_ch += e_it.hit_ch();
+      vertices_to_remove.emplace_back(e_bd_v);
+      e_bd_v->v->vertex_to_be_removed = true;
+      e_bd_v->v->vertex_on_removal_boundary = false;
 
+      shoot_hole_identify_affected_elements_around_vertex(e_bd_v);
+
+      std::swap(*e_bd_v_it, removal_boundary_vertices.back());
+      removal_boundary_vertices.pop_back();
+      continue;
+    }
+    ++e_bd_v_it;
   }
 
   DBG_FUNC_END(DBG_GENERIC);

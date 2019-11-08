@@ -190,9 +190,13 @@ class DECL {
     AroundVertexFacesIterator(Edge* e_vertex)
       : e_start(e_vertex)
       , e_cur(e_vertex)
-    {}
+    {
+      assert(e_vertex);
+      assert(e_vertex->is_constrained);
+    }
 
     Edge* operator*() const { return e_cur; }
+    Edge* operator->() const { return e_cur; }
 
     AroundVertexFacesIterator& operator++() {
       assert(e_cur != NULL);
