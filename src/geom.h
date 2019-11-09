@@ -217,7 +217,7 @@ class DECL {
           e_cur = NULL;
           return *this;
         } else if (e_cur == NULL) {
-          DBG(DBG_GENERIC) << "Smacked into the CH.";
+          DBG(DBG_ITERATORS) << "Smacked into the CH.";
           hit_ch_ = true;
           e_cur = e_start;
         }
@@ -282,23 +282,59 @@ class DECL {
     Edge * edge_before_ch() const { return edge_before_ch_; }
   };
 
+  /** State of a region of the DECL.
+   *
+   * We store things in threes, so elements for triangle 0 are at pos 0, 1, 2,
+   * and for triangle n at pos 3n, 3n+1, 3n+2.
+   *
+   * edge 0 is opposite vertex 0.
+   *
+   * This is just like triangle handles things.
+   */
+  class SavedState {
+  public:
+    std::vector<Vertex*> triangle_vertices; /** For each triangle, the three vertices making up its boundary */
+    std::vector<int> buddy;                 /** For each triangle edge, the index of its buddy edge. */
+    std::vector<int> constraints;           /** For each triangle edge, whether it is constrained. */
+    const int num_faces;
+    const int num_vertices;
+    const int num_vertices_on_boundary;
+    SavedState(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& edge_pointers, int num_faces_, int num_vertices_, int num_vertices_on_boundary_);
+  };
+  #if 0
+  /** State of a region cut out from a DECL.
+   *
+   * the boundary vertices are in order, witnessed by edges on that boundary,
+   * except if we skipped over removed vertices that were on the CH.
+   *
+   * We can tell whether a vertex (witnessed by e) is such one by checking
+   * whether the previous vertex in the list is e's tail.
+   */
+  class SavedStateFromParent : public SavedState {
+  public:
+    std::vector<Edge*> boundary_vertices;   /** List of boundary vertices, in order. */
+    std::vector<Edge*> edge_pointers;       /** Pointers into the parent's edge list of where things come from */
+    SavedStateFromParent(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& edge_pointers,
+  };
+  #endif
 
 
 private:
-  FixedVector<Edge> edges;
+  Edge *get_next_face_cw_around_vertex(Edge *e) const;
 
+private:
   static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
   void decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout);
   void decl_triangulate(VertexList& vertices);
 
-  const Vertex * const vertex_base_ptr;
+  std::shared_ptr<VertexList> all_vertices; /* potentially more than this decl handles */
+
+  FixedVector<Edge> edges;
   int num_vertices = 0;
   int num_triangles = 0;
   int num_faces = 0;
 
 private:
-  Edge *get_next_face_cw_around_vertex(Edge *e) const;
-
   std::vector<Edge*> vertices_to_remove;
   std::vector<Edge*> removal_boundary_vertices;
   std::vector<Edge*> halfedges_to_remove;
@@ -309,15 +345,33 @@ private:
   void shoot_hole_identify_affected_elements_around_vertex(Edge* const e_vertex);
   void shoot_hole_list_triangles_in_face(Edge *e);
   Edge* shoot_hole_identify_boundary_vertices_start();
-  void shoot_hole_identify_boundary_vertices();
-  void shoot_hole_identify_affected_elements();
+  bool shoot_hole_identify_boundary_vertices();
+  bool shoot_hole_identify_affected_elements();
 
 #ifndef NDEBUG
+  void assert_hole_shooting_vertices_clean() const {
+    #if 1
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_to_be_removed == false;} ) );
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_removal_boundary == false;} ) );
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_outer_removal_boundary == false;} ) );
+    #else
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_to_be_removed == false
+                                                                          && e.v->vertex_on_removal_boundary == false
+                                                                          && e.v->vertex_on_outer_removal_boundary == false;}) );
+    #endif
+  }
   void assert_hole_shooting_reset() const {
+    #if 1
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false;}) );
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_to_be_removed == false;} ) );
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_removal_boundary == false;} ) );
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_outer_removal_boundary == false;} ) );
+    #else
     assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false
                                                                           && e.v->vertex_to_be_removed == false
                                                                           && e.v->vertex_on_removal_boundary == false
                                                                           && e.v->vertex_on_outer_removal_boundary == false;}) );
+    #endif
     assert(vertices_to_remove.size() == 0);
     assert(removal_boundary_vertices.size() == 0);
     assert(halfedges_to_remove.size() == 0);
@@ -333,19 +387,17 @@ private:
     assert(vertex_is_on_ch(e));
   }
 #else
+  void assert_hole_shooting_vertices_clean() const {}
   void assert_hole_shooting_reset() const {}
   void assert_vertex_is_on_ch(Edge *) const {}
 #endif
 
 
 public:
-  DECL(VertexList& vertices);
+  DECL(std::shared_ptr<VertexList> all_vertices);
+  DECL(std::shared_ptr<VertexList> all_vertices, const SavedState &state);
 
-  void find_convex_decomposition() {
-    unconstrain_all();
-    //shoot_hole(2);
-    shoot_hole(sqrt(num_vertices));
-  }
+  void find_convex_decomposition();
   void unconstrain_all();
   void reset_constraints();
 
@@ -357,7 +409,7 @@ public:
   void assert_valid() const {}
 #endif
 
-  void write_obj_segments(const VertexList * vertices, std::ostream &o) const;
+  void write_obj_segments(bool dump_vertices, std::ostream &o) const;
   int get_num_faces() const { return num_faces; }
 
   friend std::ostream& operator<<(std::ostream&, const DECL&);

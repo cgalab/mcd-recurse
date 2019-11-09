@@ -26,6 +26,7 @@ struct FixedVector
     using Base::at;
     using Base::back;
     using Base::begin;
+    using Base::data;
     using Base::end;
     using Base::size;
     using Base::operator[];

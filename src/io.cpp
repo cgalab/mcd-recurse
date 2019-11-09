@@ -6,11 +6,11 @@
 
 /** Parse a file and return a vertex list
  */
-std::unique_ptr<VertexList>
+std::shared_ptr<VertexList>
 load_vertices(std::istream& in) {
   std::string line;
 
-  auto res = std::make_unique<VertexList>();
+  auto res = std::make_shared<VertexList>();
 
   int idx = 0;
   while (std::getline(in, line)) {

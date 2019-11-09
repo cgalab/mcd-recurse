@@ -4,5 +4,5 @@
 
 #include <istream>
 
-std::unique_ptr<VertexList>
+std::shared_ptr<VertexList>
 load_vertices(std::istream& in);

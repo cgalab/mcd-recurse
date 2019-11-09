@@ -124,7 +124,7 @@ int main(int argc, char *argv[]) {
   }
 
 
-  std::unique_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
+  std::shared_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
 
   auto start_time = std::chrono::system_clock::now();
   auto end_time = start_time + std::chrono::seconds(max_time);
@@ -140,7 +140,7 @@ int main(int argc, char *argv[]) {
   std::cout << "random_seed: " << seed << std::endl << std::flush;
   random_engine.seed(seed);
 
-  DECL decl(*vertexlist);
+  DECL decl(vertexlist);
   while (1) {
     decl.assert_valid();
     decl.find_convex_decomposition();
@@ -155,7 +155,7 @@ int main(int argc, char *argv[]) {
 
       best_num_faces = this_num_faces;
       std::stringstream().swap(obj_content); // clear obj_content
-      decl.write_obj_segments(full_obj ? &*vertexlist : NULL, obj_content);
+      decl.write_obj_segments(full_obj, obj_content);
     }
 
     if ( (this_num_faces <= lower_bound)
