@@ -18,20 +18,23 @@ private:
   /* When shooting holes in the DECL, we store information here */
   bool vertex_to_be_removed = false;
   bool vertex_on_removal_boundary = false;
+  bool vertex_on_outer_removal_boundary = false;
 
 public:
 #ifndef NDEBUG
-  const int idx;
-  Vertex(double x_, double y_, int idx_)
+  const int idx_;
+  Vertex(double x_, double y_, int idx)
     : x(x_)
     , y(y_)
-    , idx(idx_)
+    , idx_(idx)
   {}
+  int idx() const { return idx_; };
 #else
   Vertex(double x_, double y_, int)
     : x(x_)
     , y(y_)
   {}
+  int idx() const { return 0; };
 #endif
 
   /** determine Vertices' a, b, c's relative orientation.
@@ -73,10 +76,10 @@ class Edge {
   Vertex *v;               /** Vertex this edge points to.  Tail of prev and prev_constrained. */
   bool triangle_to_be_removed = false; /** During hole shooting, we use this as a flag. */
 #ifndef NDEBUG
-  const int idx;
+  const int idx_;
 #endif
 public:
-  Edge(Edge *next_, Edge *prev_, Edge *opposite_, Vertex *v_, [[maybe_unused]] int idx_)
+  Edge(Edge *next_, Edge *prev_, Edge *opposite_, Vertex *v_, [[maybe_unused]] int idx)
     : opposite(opposite_)
     , next(next_)
     , prev(prev_)
@@ -84,9 +87,14 @@ public:
     , prev_constrained(prev_)
     , v(v_)
 #ifndef NDEBUG
-    , idx(idx_)
+    , idx_(idx)
 #endif
   {}
+#ifndef NDEBUG
+  int idx() const { return idx_; };
+#else
+  int idx() const { return 0; };
+#endif
 
 public:
   void print_tip_and_neighbors() const {
@@ -130,7 +138,8 @@ public:
 
   /** Mark this edge as not a constrained edge.
    *
-   * Update pointers to next constrained in neighbors.
+   * Upd/It
+   * ate pointers to next constrained in neighbors.
    */
   void unconstrain() {
     assert(can_unconstrain());
@@ -173,7 +182,7 @@ public:
 };
 
 class DECL {
-  /** Iterate around v, returning a handle for each face.
+  /** Iterate around v once, returning a handle for each face.
    *
    * In general, we'll walk around a vertex in clockwise order.
    *
@@ -181,6 +190,7 @@ class DECL {
    * and continue from there counter-clockwise.
    */
   class AroundVertexFacesIterator {
+  protected:
     bool hit_ch_ = false;
 
     Edge * const e_start;
@@ -226,8 +236,55 @@ class DECL {
     bool hit_ch() const { return hit_ch_; }
   };
 
+  /** Iterate around v once, returning a handle for each face.
+   *
+   * This iterator returns all faces in strictly clockwise order, even
+   * when running into the CH.
+   */
+  class AroundVertexFacesStriclyClockwiseIterator : public AroundVertexFacesIterator {
+  private:
+    using Base = AroundVertexFacesIterator;
+    Edge *edge_before_ch_ = NULL;
+    Edge *edge_after_ch_ = NULL;
+  public:
+    AroundVertexFacesStriclyClockwiseIterator(Edge* e_vertex)
+      : Base(e_vertex)
+    {}
+
+    AroundVertexFacesStriclyClockwiseIterator& operator++() {
+      Edge *edge_before = e_cur;
+      Base::operator++();
+
+      if (! hit_ch_) {
+        return *this;
+      } else {
+        assert(edge_before_ch_ == NULL);
+        assert(edge_after_ch_ == NULL);
+        hit_ch_ = false;
+
+        edge_before_ch_ = edge_before;
+        if (e_cur == NULL) {
+          // The face/edge we started at was already on the CH.
+          edge_after_ch_ = e_start;
+        } else {
+          // Search the extremal edge on the counter-clockwise side of the start edge.
+          while (e_cur->opposite) {
+            e_cur = e_cur->opposite->prev_constrained;
+            assert(e_cur->v == e_start->v);
+          }
+          edge_after_ch_ = e_cur;
+        }
+        return *this;
+      }
+    }
+    bool hit_ch() const { return (edge_after_ch_ != NULL); }
+    Edge * edge_after_ch() const { return edge_after_ch_; }
+    Edge * edge_before_ch() const { return edge_before_ch_; }
+  };
 
 
+
+private:
   FixedVector<Edge> edges;
 
   static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
@@ -240,6 +297,8 @@ class DECL {
   int num_faces = 0;
 
 private:
+  Edge *get_next_face_cw_around_vertex(Edge *e) const;
+
   std::vector<Edge*> vertices_to_remove;
   std::vector<Edge*> removal_boundary_vertices;
   std::vector<Edge*> halfedges_to_remove;
@@ -249,16 +308,43 @@ private:
   void shoot_hole_select_vertices(unsigned size);
   void shoot_hole_identify_affected_elements_around_vertex(Edge* const e_vertex);
   void shoot_hole_list_triangles_in_face(Edge *e);
-  void shoot_hole_identify_enclosed_boundary_vertices();
+  Edge* shoot_hole_identify_boundary_vertices_start();
+  void shoot_hole_identify_boundary_vertices();
   void shoot_hole_identify_affected_elements();
+
+#ifndef NDEBUG
+  void assert_hole_shooting_reset() const {
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false
+                                                                          && e.v->vertex_to_be_removed == false
+                                                                          && e.v->vertex_on_removal_boundary == false
+                                                                          && e.v->vertex_on_outer_removal_boundary == false;}) );
+    assert(vertices_to_remove.size() == 0);
+    assert(removal_boundary_vertices.size() == 0);
+    assert(halfedges_to_remove.size() == 0);
+    assert(vertices_to_remove_on_ch == 0);
+    assert(faces_removed == 0);
+  }
+  bool vertex_is_on_ch(Edge* e) const { /* expensive */
+    auto it = AroundVertexFacesIterator(e);
+    for (; *it; ++it) { }
+    return it.hit_ch();
+  }
+  void assert_vertex_is_on_ch(Edge* e) const {
+    assert(vertex_is_on_ch(e));
+  }
+#else
+  void assert_hole_shooting_reset() const {}
+  void assert_vertex_is_on_ch(Edge *) const {}
+#endif
+
 
 public:
   DECL(VertexList& vertices);
 
   void find_convex_decomposition() {
     unconstrain_all();
-    shoot_hole(2);
-    //shoot_hole(sqrt(num_vertices));
+    //shoot_hole(2);
+    shoot_hole(sqrt(num_vertices));
   }
   void unconstrain_all();
   void reset_constraints();
@@ -267,19 +353,8 @@ public:
 
 #ifndef NDEBUG
   void assert_valid() const;
-  void assert_hole_shooting_reset() const {
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false
-                                                                          && e.v->vertex_to_be_removed == false
-                                                                          && e.v->vertex_on_removal_boundary == false;}) );
-    assert(vertices_to_remove.size() == 0);
-    assert(removal_boundary_vertices.size() == 0);
-    assert(halfedges_to_remove.size() == 0);
-    assert(vertices_to_remove_on_ch == 0);
-    assert(faces_removed == 0);
-  }
 #else
   void assert_valid() const {}
-  void assert_hole_shooting_reset() const {}
 #endif
 
   void write_obj_segments(const VertexList * vertices, std::ostream &o) const;
