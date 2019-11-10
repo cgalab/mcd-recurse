@@ -8,3 +8,5 @@
  */
 #cmakedefine DEBUG_OUTPUT_WITH_FILES
 
+
+#cmakedefine CMAKE_BUILD_TYPE "@UPPERCASE_CMAKE_BUILD_TYPE@"

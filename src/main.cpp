@@ -1,6 +1,8 @@
 #include "io.h"
 #include "geom.h"
 
+#include "gitversion.h"
+
 #include <fstream>
 #include <iostream>
 #include <chrono>
@@ -137,6 +139,7 @@ int main(int argc, char *argv[]) {
   bool have_solution = false;
   std::random_device real_rng("/dev/urandom");
   int seed = requested_seed != 0 ? requested_seed : real_rng();
+  std::cout << "version: " << GITVERSION << std::endl;
   std::cout << "random_seed: " << seed << std::endl << std::flush;
   random_engine.seed(seed);
 
