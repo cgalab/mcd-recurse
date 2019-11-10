@@ -620,14 +620,14 @@ shoot_hole_identify_boundary_vertices() {
     assert(i->v->vertex_on_removal_boundary != i->v->vertex_to_be_removed);
     i->v->vertex_on_removal_boundary = false;
   }
-  assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_removal_boundary == false;}) );
+  assert( std::all_of(edges.begin(), edges.end(), [](const Edge& le){return le.v->vertex_on_removal_boundary == false;}) );
 
   DEBUG_STMT( {
     /* Ensure that an edge has vertex_on_outer_removal_boundary set if and only iff it is in the boundary vector. */
     assert( std::all_of(boundary.begin(), boundary.end(),
-      [](const Edge* e){return e->v->vertex_on_outer_removal_boundary;}) );
+      [](const Edge* le){return le->v->vertex_on_outer_removal_boundary;}) );
     for (auto i : boundary) i->v->vertex_on_outer_removal_boundary = false;
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_outer_removal_boundary == false;}) );
+    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& le){return le.v->vertex_on_outer_removal_boundary == false;}) );
     for (auto i : boundary) i->v->vertex_on_outer_removal_boundary = true;
   });
 
