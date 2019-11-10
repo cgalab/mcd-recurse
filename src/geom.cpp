@@ -902,6 +902,35 @@ shoot_hole_inject_saved_state(const SavedState &state) {
   assert_valid();
   assert(halfedges_to_remove.size() == state.triangle_vertices.size());
 
+  /* Check which elements of the removal_boundary_vertices are proper boundary edges
+   *
+   * The removal boundary is a list of edges.
+   * The edges can be actual edges of that boundary, or they
+   * can be witnesses for vertices only:
+   *   o If the removed boundary is on the convex hull, then the vertex where
+   *     we join up with the remaining part again will be an edge in the list
+   *     for which we only care about the vertex.
+   *
+   * Usually we can tell these two cases by looking at whether edge i+1
+   * has the vertex of edge i as its source.  That's mostly, but not
+   * always the case. :/
+   *
+   * Assume the boundary consists of two chains beteen V1 and V2,
+   * and one of the chains is on the CH.  The other chain is represented by
+   * the elements in removal_boundary_vertices.  If V1 and V2 are connected
+   * by an edge, and that's the edge we picked to represent V1 in the list,
+   * this will blow up.
+   *
+   * Therefore, we need to actually walk along the boundary before
+   * we overwrite things.  Then we can just check if the right of us
+   * is removed territoriy.
+   */
+  std::vector<int> removal_boundary_vertex_is_entire_edge;
+  removal_boundary_vertex_is_entire_edge.reserve(removal_boundary_vertices.size());
+  for (auto e : removal_boundary_vertices) {
+    removal_boundary_vertex_is_entire_edge.push_back(e->opposite && e->opposite->triangle_to_be_removed);
+  }
+
   Vertex* const * tv = state.triangle_vertices.data();
   const int* c = state.constraints.data();
   const int* b = state.buddy.data();
@@ -970,7 +999,6 @@ shoot_hole_inject_saved_state(const SavedState &state) {
   {
     assert(boundary_from_within.size() >= removal_boundary_vertices.size());
 
-    Edge *prev_vertex = removal_boundary_vertices.back();
     Edge *edge_in_region = NULL;
     DEBUG_STMT({
       DBG(DBG_STATERESTORE) << "Boundary from within:";
@@ -978,17 +1006,20 @@ shoot_hole_inject_saved_state(const SavedState &state) {
         DBG(DBG_STATERESTORE) << " " << *e;
       };
       DBG(DBG_STATERESTORE) << "Boundary outside:";
+      auto bd_is_edge_it = removal_boundary_vertex_is_entire_edge.begin();
       for (auto e : removal_boundary_vertices) {
-        DBG(DBG_STATERESTORE) << " " << *e;
+        DBG(DBG_STATERESTORE) << " " << *e << "; is edge: " << *bd_is_edge_it;
+        ++bd_is_edge_it;
       };
     });
 
     DBG(DBG_STATERESTORE) << "Stitching:";
     auto e_it = removal_boundary_vertices.begin();
-    while ((*e_it)->get_tail() != prev_vertex->v) { /* see comment in for loop below on when an entry is an actual edge */
+    auto ebd_it = removal_boundary_vertex_is_entire_edge.begin();
+    while (! *ebd_it) {
       DBG(DBG_STATERESTORE) << " Skipping over initial CH vertex " << *(*e_it)->v << "  via " << **e_it;
-      prev_vertex = *e_it;
       ++e_it;
+      ++ebd_it;
       assert(e_it != removal_boundary_vertices.end());
     }
 
@@ -1008,29 +1039,19 @@ shoot_hole_inject_saved_state(const SavedState &state) {
     }
     assert(e_inner != NULL);
 
-    [[maybe_unused]] bool hit_a_ch_vertex = false;
-    for (; e_it != removal_boundary_vertices.end(); ++e_it) {
+    for (; e_it != removal_boundary_vertices.end(); ++e_it, ++ebd_it) {
+      DBG(DBG_STATERESTORE) << " At element " << **e_it << "; is edge: " << *ebd_it;
       Edge *e = *e_it;
-      /* This is an edge with the removed and re-injected area if this 
-       * edge's previous vertex is the vertex of the previous entry
-       * in the list.
-       *
-       * Otherwise this entry in the list is just a witness for a vertex that
-       * is on the CH, and does not represent an edge shared with the region.
-       */
-      if (e->get_tail() == prev_vertex->v) {
+      if (*ebd_it) {
         DBG(DBG_STATERESTORE) << " have edge (" << e->get_tail()->idx() << ", " << e->v->idx() << ") via " << *e;
 
         if (e_inner->v != e->get_tail()) {
-          assert(hit_a_ch_vertex);
           while (e_inner->v != e->get_tail()) {
             DBG(DBG_STATERESTORE) << "   Looking for match in the interior.  This is nowhere close: " << *e_inner;
             while (e_inner->opposite) e_inner = get_next_face_ccw(e_inner);
             e_inner = e_inner->prev_constrained;
-            hit_a_ch_vertex = false;
           }
         }
-        assert(!hit_a_ch_vertex);
 
         while (e->v != e_inner->get_tail()) {
           DBG(DBG_STATERESTORE) << "   Looking for match in the interior.  This isn't it: " << *e_inner;
@@ -1044,9 +1065,7 @@ shoot_hole_inject_saved_state(const SavedState &state) {
         e_inner = e_inner->prev_constrained;
       } else {
         DBG(DBG_STATERESTORE) << " just a CH vertex " << *e->v;
-        hit_a_ch_vertex = true;
       }
-      prev_vertex = e;
     }
   }
 

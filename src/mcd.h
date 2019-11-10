@@ -29,10 +29,10 @@ extern std::default_random_engine random_engine;
                 DBG_GENERIC                       | \
                 0 )
 /*
-                DBG_ITERATORS                     | \
                 DBG_SHOOTHOLE                     | \
                 DBG_STATESAVE                     | \
                 DBG_STATERESTORE                  | \
+                DBG_ITERATORS                     | \
 */
 
 #ifndef NDEBUG
