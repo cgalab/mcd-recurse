@@ -295,11 +295,20 @@ class DECL {
   public:
     std::vector<Vertex*> triangle_vertices; /** For each triangle, the three vertices making up its boundary */
     std::vector<int> buddy;                 /** For each triangle edge, the index of its buddy edge. */
-    std::vector<int> constraints;           /** For each triangle edge, whether it is constrained. */
-    const int num_faces;
-    const int num_vertices;
-    const int num_vertices_on_boundary;
+    std::vector<int> constraints;           /** For each triangle edge, if it is constrained, the index of the next and prev constrained edge.  -1 otherwise. */
+    int num_faces;
+    int num_vertices;
+    int num_vertices_on_boundary;
+    SavedState()
+      : num_faces(0)
+      , num_vertices(0)
+      , num_vertices_on_boundary(0)
+      { }
+    SavedState& operator= (const SavedState&) = default;
+    SavedState& operator= (SavedState&&) = default;
+    SavedState(SavedState&& o) = default;
     SavedState(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& edge_pointers, int num_faces_, int num_vertices_, int num_vertices_on_boundary_);
+    SavedState(const FixedVector<Edge> &alledges, int num_faces_, int num_vertices_, int num_vertices_on_boundary_);
   };
   #if 0
   /** State of a region cut out from a DECL.
@@ -321,6 +330,7 @@ class DECL {
 
 private:
   Edge *get_next_face_cw_around_vertex(Edge *e) const;
+  Edge *get_next_face_ccw(Edge *e) const;
 
 private:
   static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
@@ -330,9 +340,10 @@ private:
   std::shared_ptr<VertexList> all_vertices; /* potentially more than this decl handles */
 
   FixedVector<Edge> edges;
-  int num_vertices = 0;
-  int num_triangles = 0;
-  int num_faces = 0;
+  int num_vertices;
+  int num_vertices_on_boundary;
+  int num_triangles;
+  int num_faces;
 
 private:
   std::vector<Edge*> vertices_to_remove;
@@ -347,6 +358,9 @@ private:
   Edge* shoot_hole_identify_boundary_vertices_start();
   bool shoot_hole_identify_boundary_vertices();
   bool shoot_hole_identify_affected_elements();
+  void shoot_hole_inject_saved_state(const SavedState &state);
+  void shoot_hole(unsigned size, int num_iterations, int max_recurse);
+  void shoot_holes(int max_recurse);
 
 #ifndef NDEBUG
   void assert_hole_shooting_vertices_clean() const {
@@ -397,11 +411,10 @@ public:
   DECL(std::shared_ptr<VertexList> all_vertices);
   DECL(std::shared_ptr<VertexList> all_vertices, const SavedState &state);
 
-  void find_convex_decomposition();
+  void find_convex_decomposition(int max_recurse=1);
+  SavedState find_convex_decomposition_many(int num_iterations, int num_faces_to_beat, int max_recurse);
   void unconstrain_all();
   void reset_constraints();
-
-  void shoot_hole(unsigned size);
 
 #ifndef NDEBUG
   void assert_valid() const;

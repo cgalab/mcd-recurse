@@ -2,6 +2,9 @@
 #include "triangle.h"
 
 #include <numeric>
+#include <cmath> 
+
+#define NUMBER_OF_HOLE_PUNCHES_SCALE 10
 
 static const int next_edge_offset[] = {1,2,0};
 static const int prev_edge_offset[] = {2,0,1}; /* also same as vertex index that an edge points towards */
@@ -47,15 +50,17 @@ DECL(std::shared_ptr<VertexList> vertices)
   decl_triangulate(*vertices);
 }
 
-/** Initialize the DECL with the saved structure */
+/** Initialize the DECL with the saved structure, ignoring constraints */
 DECL::
 DECL(std::shared_ptr<VertexList> vertices, const SavedState &state)
 : all_vertices(vertices)
 , num_vertices(state.num_vertices)
+, num_vertices_on_boundary(state.num_vertices_on_boundary)
 , num_triangles(state.triangle_vertices.size() / 3)
 , num_faces(state.triangle_vertices.size() / 3)
 {
-  DBG(DBG_GENERIC) << "Setting up a DECL with " << num_vertices << " vertices";
+  DBG_INDENT_INC();
+  //DBG(DBG_GENERIC) << "Setting up a DECL with " << num_vertices << " vertices";
   int num_halfedges = state.triangle_vertices.size();
   assert(num_halfedges % 3 == 0);
   int num_t = num_halfedges/3;
@@ -94,6 +99,7 @@ DECL(std::shared_ptr<VertexList> vertices, const SavedState &state)
   assert(edge_end == &edges[num_halfedges]);
 
   assert_hole_shooting_reset();
+  DBG_INDENT_DEC();
 }
 
 /** Prepare triangle's in/out data structure with the vertex list
@@ -153,6 +159,7 @@ decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout)
 
   num_triangles = num_t;
   num_faces = num_t;
+  num_vertices_on_boundary = num_ch_v;
 }
 
 /** Triangulare the pointset and create the DECL
@@ -195,7 +202,8 @@ decl_triangulate(VertexList& vertices) {
 void
 DECL::
 unconstrain_all() {
-  DBG_FUNC_BEGIN(DBG_GENERIC);
+  //DBG_FUNC_BEGIN(DBG_GENERIC);
+  DBG_INDENT_INC();
   std::vector<int> edge_index(edges.size());
   std::iota (std::begin(edge_index), std::end(edge_index), 0);
 
@@ -213,21 +221,24 @@ unconstrain_all() {
     e.unconstrain();
     --num_faces;
   }
-  DBG(DBG_GENERIC) << "Now have " << num_faces << "/" << old_num_faces << " faces";
-  DBG_FUNC_END(DBG_GENERIC);
+  //DBG(DBG_GENERIC) << "Now have " << num_faces << "/" << old_num_faces << " faces";
+  DBG_INDENT_DEC();
+  //DBG_FUNC_END(DBG_GENERIC);
 }
 
 /** Mark all edges as constrained again, resetting everything. */
 void
 DECL::
 reset_constraints() {
-  DBG_FUNC_BEGIN(DBG_GENERIC);
+  //DBG_FUNC_BEGIN(DBG_GENERIC);
+  DBG_INDENT_INC();
   assert_hole_shooting_reset();
   for (auto &e : edges) {
     e.reset_all_constraints();
   }
   num_faces = num_triangles;
-  DBG_FUNC_END(DBG_GENERIC);
+  DBG_INDENT_DEC();
+  //DBG_FUNC_END(DBG_GENERIC);
 }
 
 
@@ -240,13 +251,32 @@ DECL::
 get_next_face_cw_around_vertex(Edge *e) const {
   assert(e->is_constrained);
 
+  //DBG(DBG_GENERIC) << " Looping around " << *e;
   Edge* r = e->next_constrained->opposite;
   if (!r) {
     r = e;
+    //DBG(DBG_GENERIC) << "   r is NULL, restarting with " << *r;
     while (r->opposite) {
       r = r->opposite->prev;
+      //DBG(DBG_GENERIC) << "   r now is " << *r;
+      assert(r != e);
     }
   }
+  assert(r->v == e->v);
+  return r;
+}
+
+/* Returns the next face ccw of e.  e must not be on the boundary.
+ *
+ * e needs to be a constrained edge.
+ */
+Edge *
+DECL::
+get_next_face_ccw(Edge *e) const {
+  assert(e->is_constrained);
+  assert(e->opposite);
+
+  Edge* r = e->opposite->prev_constrained;
   assert(r->v == e->v);
   return r;
 }
@@ -568,7 +598,6 @@ shoot_hole_identify_boundary_vertices() {
       if (!e_it->v->vertex_on_removal_boundary) continue;
       Edge *e_to_remove = &*e_it;
       DBG(DBG_SHOOTHOLE) << "Unaccounted for vertex " << *e_to_remove->v << "; via " << *e_to_remove;
-      assert(!vertex_is_on_ch(e_to_remove));
 
       e_to_remove->v->vertex_on_removal_boundary = false;
       e_to_remove->v->vertex_to_be_removed = true;
@@ -576,7 +605,14 @@ shoot_hole_identify_boundary_vertices() {
 
       int old_vertices_to_remove_on_ch = vertices_to_remove_on_ch;
       shoot_hole_identify_affected_elements_around_vertex(e_to_remove);
-      assert(vertices_to_remove_on_ch == old_vertices_to_remove_on_ch);
+      assert(vertices_to_remove_on_ch >= old_vertices_to_remove_on_ch);
+
+      if (vertices_to_remove_on_ch != old_vertices_to_remove_on_ch) {
+        assert(vertex_is_on_ch(e_to_remove));
+        DBG(DBG_GENERIC) << "We have an accounted-for vertex on the CH.  Calling this one failed.";
+        DBG_FUNC_END(DBG_SHOOTHOLE);
+        return false;
+      }
     }
   }
 
@@ -631,7 +667,7 @@ shoot_hole_identify_affected_elements() {
   *  - A list of edge locations that held that state so we can play-back
   *    said stored state, or a new decomposition should we prefer it.
   */
-  DBG_FUNC_BEGIN(DBG_GENERIC | DBG_SHOOTHOLE);
+  DBG_FUNC_BEGIN(DBG_SHOOTHOLE);
   bool res = false;
 
   for (auto e_vertex_it : vertices_to_remove) {
@@ -644,7 +680,7 @@ shoot_hole_identify_affected_elements() {
   }
 
   DBG(DBG_SHOOTHOLE) << "Removing " << faces_removed << " faces.";
-  DBG(DBG_SHOOTHOLE) << "Removing " << vertices_to_remove.size() << " vertices.";
+  DBG(DBG_SHOOTHOLE) << "Removing " << vertices_to_remove.size() << " vertices out of " << num_vertices;
   DBG(DBG_SHOOTHOLE) << "Of those, " << vertices_to_remove_on_ch << " are on the CH.";
   DBG(DBG_SHOOTHOLE) << "Removing " << halfedges_to_remove.size()/3 << " triangles.";
   DBG(DBG_SHOOTHOLE) << "Removing " << halfedges_to_remove.size() << " halfedges.";
@@ -679,7 +715,9 @@ shoot_hole_identify_affected_elements() {
     for (auto v : removal_boundary_vertices) {
       DBG(DBG_SHOOTHOLE) << " v" << v->v->idx() << "; via " << *v;
     }
+  });
 
+  {
     int total_num_v  = vertices_to_remove.size() + removal_boundary_vertices.size();
     int total_num_2e = halfedges_to_remove.size() + removal_boundary_vertices.size() + vertices_to_remove_on_ch;
     int total_num_f_accounted_for = halfedges_to_remove.size()/3;
@@ -688,16 +726,24 @@ shoot_hole_identify_affected_elements() {
     DBG(DBG_SHOOTHOLE) << " total_num_f_accounted_for: " << total_num_f_accounted_for;
     int inner_faces = 1 + total_num_2e/2 - total_num_v - total_num_f_accounted_for;
     DBG(DBG_SHOOTHOLE) << " number of remaining enclosed faces: " << inner_faces;
-    assert(total_num_2e % 2 == 0);
-    assert(inner_faces == 0);
-  });
 
-  res = true;
+    if (inner_faces != 0) {
+      DBG(DBG_SHOOTHOLE) << "We ate up everything except a small set in the middle.";
+    } else {
+      assert(total_num_2e % 2 == 0);
+      res = true;
+    }
+  }
  done:
-  DBG_FUNC_END(DBG_GENERIC | DBG_SHOOTHOLE);
+  DBG_FUNC_END(DBG_SHOOTHOLE);
   return res;
 }
 
+/** Makes a trianglelist for all the edges in child_edge_pointers.
+ *
+ * The parentlist we need to figure out neighborhood relations.  This requires
+ * additional memory and runtime linear in the size of parentlist.
+ */
 DECL::SavedState::
 SavedState(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& child_edge_pointers, int num_faces_, int num_vertices_, int num_vertices_on_boundary_)
   : num_faces(num_faces_)
@@ -716,7 +762,7 @@ SavedState(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& child_
   assert(num_2edges % 2 == 0);
   assert(num_vertices - num_2edges/2 + num_halfedges/3 == 1); /* v - e + f == <number of components> */
 
-  DBG(DBG_GENERIC | DBG_STATESAVE) << "Saving State of " << num_faces << " faces, backed by " << num_halfedges /3 << " triangles.";
+  DBG(DBG_STATESAVE) << "Saving State of " << num_faces << " faces, backed by " << num_halfedges /3 << " triangles.";
   DBG(DBG_STATESAVE) << "  Half edges:";
   {
     int i=0;
@@ -734,7 +780,7 @@ SavedState(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& child_
   }
 
   triangle_vertices.resize(num_halfedges);
-  constraints.resize(num_halfedges);
+  constraints.resize(num_halfedges*2);
   buddy.resize(num_halfedges);
 
   {
@@ -743,39 +789,302 @@ SavedState(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& child_
     int* b = buddy.data();
 
     DBG(DBG_STATESAVE) << "copying data";
-    for (int i = 0; i<num_halfedges; i+=3) {
-      for (int j=0; j<3; ++j) {
-        DBG(DBG_STATESAVE) << "  " << *child_edge_pointers[i + next_edge_offset[j]];
-        *(tv++) = child_edge_pointers[i + next_edge_offset[j]]->v;
-        *(c++)  = child_edge_pointers[i + j]->is_constrained;
-        Edge *o = child_edge_pointers[i + j]->opposite;
-        int idx = o ? (o - &parentlist[0]) : -1;
-        assert(o == NULL || (idx == o->idx()));
-        *(b++)  = idx == - 1 ? -1 : edge_idx_in_child_edge_pointers[ idx ];
-        DBG(DBG_STATESAVE) << "   o: " << o << "; idx: " << idx << "; setting b to " << edge_idx_in_child_edge_pointers[ idx ];
-      }
+    int i=0;
+    for (auto e_it : child_edge_pointers) {
+      Edge *e = &*e_it;
+      DBG(DBG_STATESAVE) << "  " << *e;
+      assert(e == child_edge_pointers[i]);
+      assert(child_edge_pointers[3*(i/3) + next_edge_offset[i%3]] == e->next);
+      *(tv++) = e->next->v;
+      if (e->is_constrained) {
+        int idx;
+        idx = e->next_constrained - &parentlist[0];
+        assert(edge_idx_in_child_edge_pointers.at(idx) != -1);
+        *(c++) = edge_idx_in_child_edge_pointers[idx];
+
+        idx = e->prev_constrained - &parentlist[0];
+        assert(edge_idx_in_child_edge_pointers.at(idx) != -1);
+        *(c++) = edge_idx_in_child_edge_pointers[idx];
+      } else {
+        *(c++) = -1;
+        *(c++) = -1;
+      };
+      Edge *o = e->opposite;
+      int idx = o - &parentlist[0];
+      assert(o == NULL || (idx == o->idx()));
+      *(b++) = o ? edge_idx_in_child_edge_pointers[ idx ] : -1;
+      DBG(DBG_STATESAVE) << "   o: " << o << "; idx: " << (o ? idx : -1) << "; setting b to " << *(b-1);
+      ++i;
     }
   }
   DBG_FUNC_END(DBG_STATESAVE);
+}
+
+/** Makes a trianglelist for all the edges.
+ *
+ * This basically dumps the state of an entire edgelist.
+ *
+ * It is very similar to the other SavedState constructor, but doesn't require additional memory
+ * to obtain edge indices for the buddy list.
+ */
+DECL::SavedState::
+SavedState(const FixedVector<Edge> &alledges, int num_faces_, int num_vertices_, int num_vertices_on_boundary_)
+  : num_faces(num_faces_)
+  , num_vertices(num_vertices_)
+  , num_vertices_on_boundary(num_vertices_on_boundary_)
+{
+  DBG_FUNC_BEGIN(DBG_STATESAVE);
+  int num_halfedges = alledges.size();
+  assert(num_halfedges % 3 == 0);
+  {
+    int num_2edges = num_halfedges + num_vertices_on_boundary;
+    DBG(DBG_STATESAVE) << "num_vertices " << num_vertices;
+    DBG(DBG_STATESAVE) << "num_vertices_on_boundary " << num_vertices_on_boundary;
+    DBG(DBG_STATESAVE) << "num_2edges " << num_2edges;
+    DBG(DBG_STATESAVE) << "num_halfedges " << num_halfedges;
+    assert(num_2edges % 2 == 0);
+    assert(num_vertices - num_2edges/2 + num_halfedges/3 == 1); /* v - e + f == <number of components> */
+  }
+
+  DBG(DBG_STATESAVE) << "Saving State of " << num_faces << " faces, backed by " << num_halfedges /3 << " triangles.";
+
+  triangle_vertices.resize(num_halfedges);
+  constraints.resize(num_halfedges*2);
+  buddy.resize(num_halfedges);
+
+  {
+    Vertex** tv = triangle_vertices.data();
+    int* c = constraints.data();
+    int* b = buddy.data();
+
+    DBG(DBG_STATESAVE) << "copying data";
+    int i=0;
+    for (const auto& e : alledges) {
+      DBG(DBG_STATESAVE) << "  " << e;
+      assert(&e == &alledges[i]);
+      assert(&alledges[3*(i/3) + next_edge_offset[i%3]] == e.next);
+      assert(&alledges[3*(i/3) + prev_edge_offset[i%3]] == e.prev);
+      *(tv++) = e.next->v;
+      if (e.is_constrained) {
+        int idx;
+        idx = e.next_constrained - &alledges[0];
+        assert(idx == e.next_constrained->idx());
+        *(c++) = idx;
+
+        idx = e.prev_constrained - &alledges[0];
+        assert(idx == e.prev_constrained->idx());
+        *(c++) = idx;
+      } else {
+        *(c++) = -1;
+        *(c++) = -1;
+      };
+      const Edge *o = e.opposite;
+      int idx = o ? (o - &alledges[0]) : -1;
+      assert(o == NULL || (idx == o->idx()));
+      *(b++) = idx;
+      DBG(DBG_STATESAVE) << "   o: " << o << "; idx: " << idx;
+      if (idx >= 0) {
+        DBG(DBG_STATESAVE) << "    that idx is " << alledges[ idx ];
+      }
+      ++i;
+    }
+  }
+  DBG_FUNC_END(DBG_STATESAVE);
+}
+
+/** Inject saved new state into this DECL at the locations of halfedges_to_remove
+ */
+void
+DECL::
+shoot_hole_inject_saved_state(const SavedState &state) {
+  DBG_FUNC_BEGIN(DBG_STATERESTORE);
+
+  assert_valid();
+  assert(halfedges_to_remove.size() == state.triangle_vertices.size());
+
+  Vertex* const * tv = state.triangle_vertices.data();
+  const int* c = state.constraints.data();
+  const int* b = state.buddy.data();
+  std::vector<Edge*> boundary_from_within;
+
+  /* Do the interior */
+  int i=0;
+  for (auto e_it : halfedges_to_remove) {
+    Edge *e = &*e_it;
+    #if 0
+    if (i % 3 == 0) {
+      DBG(DBG_STATERESTORE) << " b " << *(halfedges_to_remove[i  ]);
+      DBG(DBG_STATERESTORE) << " b " << *(halfedges_to_remove[i+1]);
+      DBG(DBG_STATERESTORE) << " b " << *(halfedges_to_remove[i+2]);
+
+      //DBG(DBG_STATERESTORE) << "   v:" << (*(tv  ))->idx();
+      //DBG(DBG_STATERESTORE) << "   v:" << (*(tv+1))->idx();
+      //DBG(DBG_STATERESTORE) << "   v:" << (*(tv+2))->idx();
+
+      DBG(DBG_STATERESTORE) << "   c:" << *(c  ) << "; " << *(c+1);
+      DBG(DBG_STATERESTORE) << "   c:" << *(c+2) << "; " << *(c+3);
+      DBG(DBG_STATERESTORE) << "   c:" << *(c+4) << "; " << *(c+5);
+    }
+    #endif
+
+    assert(e == halfedges_to_remove[i]);
+
+    assert(halfedges_to_remove[3*(i/3) + next_edge_offset[i%3]] == e->next);
+    assert(halfedges_to_remove[3*(i/3) + prev_edge_offset[i%3]] == e->prev);
+    e->next->v = *(tv++);
+    e->is_constrained = (*c != -1);
+    if (e->is_constrained) {
+      assert(*(c+1) != -1);
+      e->next_constrained = halfedges_to_remove[ *(c++) ];
+      e->prev_constrained = halfedges_to_remove[ *(c++) ];
+    } else {
+      assert(*(c+1) == -1);
+      c += 2;
+      e->next_constrained = NULL;
+      e->prev_constrained = NULL;
+    };
+
+    if (*b != -1) {
+      e->opposite = halfedges_to_remove[ *(b++) ];
+    } else {
+      e->opposite = NULL;
+      boundary_from_within.emplace_back(e);
+      ++b;
+    }
+    e->triangle_to_be_removed = false;
+    ++i;
+    #if 0
+    if (i % 3 == 0) {
+      DBG(DBG_STATERESTORE) << " n " << *(halfedges_to_remove[i-3]);
+      DBG(DBG_STATERESTORE) << " n " << *(halfedges_to_remove[i-2]);
+      DBG(DBG_STATERESTORE) << " n " << *(halfedges_to_remove[i-1]);
+      DBG(DBG_STATERESTORE);
+    }
+    #endif
+  }
+
+  vertices_to_remove.clear();
+  halfedges_to_remove.clear();
+
+  /* And now stitch them together along the boundary */
+  {
+    assert(boundary_from_within.size() >= removal_boundary_vertices.size());
+
+    Edge *prev_vertex = removal_boundary_vertices.back();
+    Edge *edge_in_region = NULL;
+    DEBUG_STMT({
+      DBG(DBG_STATERESTORE) << "Boundary from within:";
+      for (auto e : boundary_from_within) {
+        DBG(DBG_STATERESTORE) << " " << *e;
+      };
+      DBG(DBG_STATERESTORE) << "Boundary outside:";
+      for (auto e : removal_boundary_vertices) {
+        DBG(DBG_STATERESTORE) << " " << *e;
+      };
+    });
+
+    DBG(DBG_STATERESTORE) << "Stitching:";
+    auto e_it = removal_boundary_vertices.begin();
+    while ((*e_it)->get_tail() != prev_vertex->v) { /* see comment in for loop below on when an entry is an actual edge */
+      DBG(DBG_STATERESTORE) << " Skipping over initial CH vertex " << *(*e_it)->v << "  via " << **e_it;
+      prev_vertex = *e_it;
+      ++e_it;
+      assert(e_it != removal_boundary_vertices.end());
+    }
+
+    DBG(DBG_STATERESTORE) << " First boundary edge from outside is " << *(*e_it) << "; Looking for that in the boundary from within";
+    Edge *e_inner = NULL;
+    {
+      Edge *eo = *e_it;
+      for (auto e_within_it = boundary_from_within.rbegin(); e_within_it != boundary_from_within.rend(); ++e_within_it) {
+        Edge *ei = *e_within_it;
+        if (ei->v == eo->get_tail() &&
+            eo->v == ei->get_tail()) {
+          e_inner = ei;
+          DBG(DBG_STATERESTORE) << "   found it: " << *e_inner;
+          break;
+        }
+      }
+    }
+    assert(e_inner != NULL);
+
+    [[maybe_unused]] bool hit_a_ch_vertex = false;
+    for (; e_it != removal_boundary_vertices.end(); ++e_it) {
+      Edge *e = *e_it;
+      /* This is an edge with the removed and re-injected area if this 
+       * edge's previous vertex is the vertex of the previous entry
+       * in the list.
+       *
+       * Otherwise this entry in the list is just a witness for a vertex that
+       * is on the CH, and does not represent an edge shared with the region.
+       */
+      if (e->get_tail() == prev_vertex->v) {
+        DBG(DBG_STATERESTORE) << " have edge (" << e->get_tail()->idx() << ", " << e->v->idx() << ") via " << *e;
+
+        if (e_inner->v != e->get_tail()) {
+          assert(hit_a_ch_vertex);
+          while (e_inner->v != e->get_tail()) {
+            DBG(DBG_STATERESTORE) << "   Looking for match in the interior.  This is nowhere close: " << *e_inner;
+            while (e_inner->opposite) e_inner = get_next_face_ccw(e_inner);
+            e_inner = e_inner->prev_constrained;
+            hit_a_ch_vertex = false;
+          }
+        }
+        assert(!hit_a_ch_vertex);
+
+        while (e->v != e_inner->get_tail()) {
+          DBG(DBG_STATERESTORE) << "   Looking for match in the interior.  This isn't it: " << *e_inner;
+          e_inner = get_next_face_ccw(e_inner);
+        }
+        DBG(DBG_STATERESTORE) << "   joining up " << *e << " and " << *e_inner;
+        e->opposite = e_inner;
+        e_inner->opposite = e;
+        DBG(DBG_STATERESTORE) << "      are now " << *e << " and " << *e_inner;
+
+        e_inner = e_inner->prev_constrained;
+      } else {
+        DBG(DBG_STATERESTORE) << " just a CH vertex " << *e->v;
+        hit_a_ch_vertex = true;
+      }
+      prev_vertex = e;
+    }
+  }
+
+  num_faces += -faces_removed + state.num_faces;
+
+  removal_boundary_vertices.clear();
+  vertices_to_remove_on_ch = 0;
+  faces_removed = 0;
+
+  assert_valid();
+  assert_hole_shooting_reset();
+
+  DBG_FUNC_END(DBG_STATERESTORE);
 }
 
 /** Find a simply-connected set of vertices, and make a hole
  */
 void
 DECL::
-shoot_hole(unsigned size) {
-  DBG_FUNC_BEGIN(DBG_GENERIC);
+shoot_hole(unsigned size, int num_iterations, int max_recurse) {
+  //DBG_FUNC_BEGIN(DBG_GENERIC);
+  DBG_INDENT_INC();
+  DBG(DBG_GENERIC) << "Shoot hole of size " << size << " and try to improve " << num_iterations << " times";
 
   assert_hole_shooting_reset();
 
   shoot_hole_select_vertices(size);
   bool res = shoot_hole_identify_affected_elements();
-  if (!res) {
+  int affected_vertices = vertices_to_remove.size() + removal_boundary_vertices.size();
+  DBG(DBG_GENERIC) << "Affected vertices: " << affected_vertices << " out of " << num_vertices;
+  if (!res || affected_vertices >= num_vertices) {
     DBG(DBG_GENERIC) << "Hole shooting failed";
     for (auto e : vertices_to_remove) e->v->vertex_to_be_removed = false;
-    for (auto e : removal_boundary_vertices) e->v->vertex_on_removal_boundary = false;
-    //for (auto e : removal_boundary_vertices) e->v->vertex_on_outer_removal_boundary = false;
     for (auto e : halfedges_to_remove) e->triangle_to_be_removed = false;
+    for (auto e : removal_boundary_vertices) {
+      e->v->vertex_on_outer_removal_boundary = false;
+      e->v->vertex_on_removal_boundary = false;
+    }
 
     vertices_to_remove.clear();
     removal_boundary_vertices.clear();
@@ -784,37 +1093,113 @@ shoot_hole(unsigned size) {
     faces_removed = 0;
 
     assert_hole_shooting_reset();
-    return;
+  } else {
+    SavedState state(edges, halfedges_to_remove, faces_removed, vertices_to_remove.size() + removal_boundary_vertices.size(), removal_boundary_vertices.size() + vertices_to_remove_on_ch );
+    for (auto e : vertices_to_remove) e->v->vertex_to_be_removed = false;
+    for (auto e : removal_boundary_vertices) e->v->vertex_on_outer_removal_boundary = false;
+
+    assert_hole_shooting_vertices_clean();
+
+    DECL child(all_vertices, state);
+
+    /* Recurse here */
+    SavedState result = child.find_convex_decomposition_many(num_iterations, faces_removed, max_recurse-1);
+
+    if (result.num_faces > 0) {
+      /* We have improved */
+      int old_num_faces = num_faces;
+      shoot_hole_inject_saved_state(result);
+      DBG(DBG_GENERIC) << "Moving from " << old_num_faces << " to " << num_faces << " faces";
+    } else {
+      for (auto e : halfedges_to_remove) e->triangle_to_be_removed = false;
+      vertices_to_remove.clear();
+      removal_boundary_vertices.clear();
+      halfedges_to_remove.clear();
+      vertices_to_remove_on_ch = 0;
+      faces_removed = 0;
+      assert_hole_shooting_reset();
+    }
   }
+  DBG_INDENT_DEC();
+  //DBG_FUNC_END(DBG_GENERIC);
+}
 
-  SavedState state(edges, halfedges_to_remove, faces_removed, vertices_to_remove.size() + removal_boundary_vertices.size(), removal_boundary_vertices.size() + vertices_to_remove_on_ch );
-  for (auto e : vertices_to_remove) e->v->vertex_to_be_removed = false;
-  for (auto e : removal_boundary_vertices) e->v->vertex_on_outer_removal_boundary = false;
+void
+DECL::
+shoot_holes(int max_recurse) {
+  DBG_FUNC_BEGIN(DBG_GENERIC);
+  assert_hole_shooting_reset();
+  int hole_size = num_vertices;
+  while (hole_size >= 10) {
+    hole_size = int(std::pow(double(hole_size), 2./3));
+    int number_of_decompositions_per_hole = hole_size;
+    int number_of_hole_punches = num_vertices/hole_size * NUMBER_OF_HOLE_PUNCHES_SCALE;
 
-  assert_hole_shooting_vertices_clean();
-
-  DECL child(all_vertices, state);
-  child.find_convex_decomposition();
-
-  #if 0
-  DBG(DBG_GENERIC) << " Iterating over vertices marked for removal:";
-  for (auto e : vertices_to_remove) {
-    DBG(DBG_GENERIC) << *e;
-    e->v->vertex_to_be_removed = false;
-  }
-  // for (auto e : halfedges_to_remove) e->triangle_to_be_removed = false;
-  #endif
+    DBG(DBG_GENERIC) << "Calling shoot_hole " << number_of_hole_punches << " times with hole_size: " << hole_size << "; number_of_decompositions_per_hole: " << number_of_decompositions_per_hole << "; max_recurse: " << max_recurse;
+    for (int i=0; i<number_of_hole_punches; ++i) {
+      if ( (number_of_decompositions_per_hole >  100 && i % 100 == 0)
+        || (number_of_decompositions_per_hole <= 100 && i % 500 == 0)
+            ) {
+        DBG(DBG_GENERIC) << "i: " << i << "; current num faces: " << num_faces;
+      }
+      shoot_hole(hole_size, number_of_decompositions_per_hole, max_recurse);
+      assert_hole_shooting_reset();
+    }
+  };
   DBG_FUNC_END(DBG_GENERIC);
 }
 
 void
 DECL::
-find_convex_decomposition() {
+find_convex_decomposition(int max_recurse) {
+  DBG_FUNC_BEGIN(DBG_GENERIC);
   unconstrain_all();
-  //shoot_hole(2);
-  if (num_vertices > 15) {
-    shoot_hole(sqrt(num_vertices));
+  shoot_holes(max_recurse);
+  DBG_FUNC_END(DBG_GENERIC);
+}
+
+DECL::SavedState
+DECL::
+find_convex_decomposition_many(int num_iterations, int initial_num_faces_to_beat, int max_recurse) {
+  //DBG_FUNC_BEGIN(DBG_GENERIC);
+  DBG_INDENT_INC();
+  assert_hole_shooting_vertices_clean();
+  bool have_solution = false;
+  SavedState result;
+
+  int iter = 0;
+  int num_faces_to_beat = initial_num_faces_to_beat;
+  while (1) {
+    unconstrain_all();
+    if (max_recurse > 0) {
+      shoot_holes(max_recurse);
+    }
+
+    int this_num_faces = get_num_faces();
+
+    if (this_num_faces < num_faces_to_beat || num_faces_to_beat == 0) {
+      DBG(DBG_GENERIC) << "Iteration " << iter << "/" << num_iterations << ": Improved solution: " << num_faces_to_beat << "->" << this_num_faces;
+      have_solution = true;
+      num_faces_to_beat = this_num_faces;
+      result = SavedState(edges, this_num_faces, num_vertices, num_vertices_on_boundary);
+    }
+    ++iter;
+
+    if (iter >= num_iterations) break;
+    // DBG(DBG_GENERIC) << "Resetting constraints";
+    reset_constraints();
   }
+  if (have_solution) {
+    DBG(DBG_GENERIC) << "Done " << num_iterations << " iterations.  Best now is " << num_faces_to_beat << " from " << initial_num_faces_to_beat;
+    assert(num_faces_to_beat == result.num_faces);
+  } else {
+    DBG(DBG_GENERIC) << "Done " << num_iterations << " iterations.  We failed to improve on the bound of " << num_faces_to_beat << " faces";
+  };
+  assert_hole_shooting_reset();
+  assert(have_solution == (result.num_faces != 0));
+  DBG_INDENT_DEC();
+  //DBG_FUNC_END(DBG_GENERIC);
+  return result;
 }
 
 /** Runs validity checks for all the edges */

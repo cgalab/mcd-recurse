@@ -131,7 +131,7 @@ int main(int argc, char *argv[]) {
 
   int num_iters = 0;
   int best_seed = 0;
-  int best_num_faces = 0;
+  int best_num_faces = to_beat;
   std::stringstream obj_content;
 
   bool have_solution = false;
@@ -149,8 +149,9 @@ int main(int argc, char *argv[]) {
     ++num_iters;
 
     int this_num_faces = decl.get_num_faces();
+    DBG(DBG_GENERIC) << "This num faces " << this_num_faces;
 
-    if (this_num_faces < to_beat || to_beat == 0) {
+    if (this_num_faces < best_num_faces || best_num_faces == 0) {
       have_solution = true;
 
       best_num_faces = this_num_faces;
