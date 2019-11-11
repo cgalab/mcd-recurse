@@ -3,6 +3,11 @@
 #include <random>
 #include <vector>
 
+/** A vector that does not change its data array due to reallaction.
+ *
+ * This means that pointers to it are usually not invalidated due
+ * to adding elements.  This means we also need to know the size in advance.
+ */
 template <class T>
 struct FixedVector
   : private std::vector<T> {
@@ -13,6 +18,19 @@ struct FixedVector
 
     using Base::capacity;
   public:
+    FixedVector() = default;
+    /* No copy construction or copy assignment */
+    FixedVector(const FixedVector&) = delete;
+    FixedVector& operator=(const FixedVector&) = delete;
+    /* Moving is fine, however. */
+    FixedVector(FixedVector&&) noexcept = default;
+    FixedVector& operator=(FixedVector&&) noexcept = default;
+
+
+    //SavedState& operator= (const SavedState&) = default;
+    //SavedState& operator= (SavedState&&) = default;
+    //SavedState(SavedState&& o) = default;
+
     using const_iterator = typename Base::const_iterator;
 
     void reserve(size_type new_size) {

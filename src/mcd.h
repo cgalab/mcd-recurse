@@ -22,17 +22,17 @@ extern std::default_random_engine random_engine;
 #define DBG_GENERIC                       ( 1u << 0 )
 #define DBG_ITERATORS                     ( 1u << 1 )
 #define DBG_SHOOTHOLE                     ( 1u << 2 )
-#define DBG_STATESAVE                     ( 1u << 3 )
-#define DBG_STATERESTORE                  ( 1u << 4 )
+// #define DBG_STATESAVE                     ( 1u << 3 )
+// #define DBG_STATERESTORE                  ( 1u << 4 )
 
 #define DEBUG_MASK (                  \
                 DBG_GENERIC                       | \
+                DBG_SHOOTHOLE                     | \
                 0 )
 /*
-                DBG_SHOOTHOLE                     | \
+                DBG_ITERATORS                     | \
                 DBG_STATESAVE                     | \
                 DBG_STATERESTORE                  | \
-                DBG_ITERATORS                     | \
 */
 
 #ifndef NDEBUG
