@@ -311,6 +311,11 @@ class DECL {
                                    other (constrained) edges can border them too. */
     unsigned num_faces_mine_constrained; /** The number of faces, in the entire DECL, when all of my triangles are their own face.  */
     WorkingSet() = default;
+
+    WorkingSet(const WorkingSet&) = delete;
+    WorkingSet(WorkingSet&&) noexcept = default;
+    WorkingSet& operator=(WorkingSet&&) noexcept = default;
+
     WorkingSet(unsigned depth_, std::vector<Edge*>&& my_edges_, int num_my_triangles_, int num_faces_mine_constrained_)
       : depth(depth_)
       , my_edges(std::forward< std::vector<Edge*> >(my_edges_))
