@@ -377,8 +377,6 @@ shoot_hole(unsigned size, unsigned num_iterations, unsigned max_recurse) {
     num_marked_triangles = 0;
     num_marked_faces = 0;
   } else {
-    std::vector<Edge*> next_working_set;
-
     WorkingSet other_workingset(
       working_set.depth + 1,
       std::move(marked_halfedges),
