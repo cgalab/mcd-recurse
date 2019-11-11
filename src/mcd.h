@@ -23,6 +23,7 @@ extern std::default_random_engine random_engine;
 #define DBG_ITERATORS                     ( 1u << 1 )
 #define DBG_SHOOTHOLE                     ( 1u << 2 )
 #define DBG_SHOOTHOLE2                    ( 1u << 3 )
+#define DBG_DECOMPOSITION_LOOP            ( 1u << 4 )
 // #define DBG_STATESAVE                     ( 1u << x )
 // #define DBG_STATERESTORE                  ( 1u << x )
 
@@ -33,6 +34,7 @@ extern std::default_random_engine random_engine;
 /*
                 DBG_ITERATORS                     | \
                 DBG_SHOOTHOLE2                    | \
+                DBG_DECOMPOSITION_LOOP            | \
 
                 DBG_STATESAVE                     | \
                 DBG_STATERESTORE                  | \

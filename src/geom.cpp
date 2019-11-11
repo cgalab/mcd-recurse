@@ -330,7 +330,6 @@ void
 DECL::
 shoot_hole_select_triangles(unsigned num_triangles) {
   DBG_FUNC_BEGIN(DBG_SHOOTHOLE2);
-  DBG_INDENT_INC();
   assert_hole_shooting_reset();
 
   marking_candidates.reserve(2*num_triangles);
@@ -359,7 +358,6 @@ shoot_hole_select_triangles(unsigned num_triangles) {
 
   marking_candidates.clear();
   for (auto& e : marked_halfedges) e->triangle_marked = false;
-  DBG_INDENT_DEC();
   DBG_FUNC_END(DBG_SHOOTHOLE2);
 }
 
@@ -413,7 +411,7 @@ shoot_holes(unsigned max_recurse) {
     hole_size = int(std::pow(double(hole_size), 2./3));
     unsigned number_of_decompositions_per_hole = hole_size;
     unsigned number_of_hole_punches = working_set.num_my_triangles/hole_size * NUMBER_OF_HOLE_PUNCHES_SCALE;
-    if (hole_size < 10) break;
+    if (hole_size < 15) break;
 
     DBG(DBG_SHOOTHOLE)
       << "Calling shoot_hole " << number_of_hole_punches << " times"
@@ -438,14 +436,14 @@ shoot_holes(unsigned max_recurse) {
 void
 DECL::
 find_convex_decomposition(unsigned num_iterations, unsigned initial_num_faces_to_beat, unsigned max_recurse) {
-  DBG_FUNC_BEGIN(DBG_GENERIC);
+  DBG_FUNC_BEGIN(DBG_DECOMPOSITION_LOOP);
 
   unsigned num_faces_to_beat = initial_num_faces_to_beat ? initial_num_faces_to_beat : num_faces;
   bool have_solution = false;
   bool current_is_best = false;
   SavedDecomposition best = SavedDecomposition(working_set, num_faces);
   for (unsigned iter = 0; iter < num_iterations; ++iter) {
-    DBG(DBG_GENERIC) << "Resetting constraints";
+    DBG(DBG_DECOMPOSITION_LOOP) << "Resetting constraints";
     reset_constraints();
 
     assert_valid();
@@ -456,29 +454,29 @@ find_convex_decomposition(unsigned num_iterations, unsigned initial_num_faces_to
 
     current_is_best = (num_faces < num_faces_to_beat);
     if (current_is_best) {
-      DBG(DBG_GENERIC) << "Iteration " << iter << "/" << num_iterations << ": This solution: " << num_faces << "; NEW BEST; previous best: " << num_faces_to_beat;
+      DBG(DBG_DECOMPOSITION_LOOP) << "Iteration " << iter << "/" << num_iterations << ": This solution: " << num_faces << "; NEW BEST; previous best: " << num_faces_to_beat;
       have_solution = true;
       num_faces_to_beat = num_faces;
       best = SavedDecomposition(working_set, num_faces);
     } else {
-      DBG(DBG_GENERIC) << "Iteration " << iter << "/" << num_iterations << ": This solution: " << num_faces << "; current best: " << num_faces_to_beat;
+      DBG(DBG_DECOMPOSITION_LOOP) << "Iteration " << iter << "/" << num_iterations << ": This solution: " << num_faces << "; current best: " << num_faces_to_beat;
     }
   }
 
   if (have_solution) {
-    DBG(DBG_GENERIC) << "Done " << num_iterations << " iterations.  Best now is " << num_faces_to_beat << " from " << initial_num_faces_to_beat;
+    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  Best now is " << num_faces_to_beat << " from " << initial_num_faces_to_beat;
   } else {
-    DBG(DBG_GENERIC) << "Done " << num_iterations << " iterations.  We failed to improve on the bound of " << num_faces_to_beat << " faces";
+    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  We failed to improve on the bound of " << num_faces_to_beat << " faces";
   };
   if (!current_is_best) {
-    DBG(DBG_GENERIC) << "Re-injecting saved decomposition with " << best.saved_num_faces << " faces";
+    DBG(DBG_DECOMPOSITION_LOOP) << "Re-injecting saved decomposition with " << best.saved_num_faces << " faces";
     reinject_saved_decomposition(std::move(best));
   };
   assert_valid();
   assert_hole_shooting_reset();
   assert(num_faces_to_beat == num_faces);
 
-  DBG_FUNC_END(DBG_GENERIC);
+  DBG_FUNC_END(DBG_DECOMPOSITION_LOOP);
 }
 
 
