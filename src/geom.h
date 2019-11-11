@@ -143,8 +143,8 @@ public:
    */
   bool can_unconstrain() const {
     assert(is_constrained);
+    assert(opposite == NULL || working_set_depth == opposite->working_set_depth);
     return (opposite != NULL &&
-      working_set_depth == opposite->working_set_depth &&
       check_unconstrain_at_tip() &&
       opposite->check_unconstrain_at_tip());
   }
@@ -303,8 +303,8 @@ class DECL {
   class WorkingSet {
   public:
     unsigned depth = 0; /** A recursion depth marker to match with each edge's working_set_depth */
-    std::vector<Edge*> my_edges; /** The list of edges we are working on right now */
-    std::vector<Edge*> shuffled_edges; /** The list of edges we are working on right now, in random order */
+    std::vector<Edge*> my_edges; /** The list of edges we are working on right now, including the boundary edges */
+    std::vector<Edge*> shuffled_edges; /** The list of edges we are working on right now, excluding the boundary edges, in random order */
     unsigned num_my_triangles; /** The number of triangles incident to my_edges.
                                    This is identical to the number of faces when all
                                    of my_edges are constrained.  Note that not all
@@ -317,10 +317,10 @@ class DECL {
     WorkingSet(WorkingSet&&) noexcept = default;
     WorkingSet& operator=(WorkingSet&&) noexcept = default;
 
-    WorkingSet(unsigned depth_, std::vector<Edge*>&& my_edges_, int num_my_triangles_, int num_faces_mine_constrained_)
+    WorkingSet(unsigned depth_, std::vector<Edge*>&& my_edges_, std::vector<Edge*>&& shuffled_edges_, int num_my_triangles_, int num_faces_mine_constrained_)
       : depth(depth_)
-      , my_edges(std::forward< std::vector<Edge*> >(my_edges_))
-      , shuffled_edges(my_edges)
+      , my_edges(std::move(my_edges_))
+      , shuffled_edges(std::move(shuffled_edges_))
       , num_my_triangles(num_my_triangles_)
       , num_faces_mine_constrained(num_faces_mine_constrained_)
     {}
@@ -368,8 +368,8 @@ class DECL {
   private:
     /* setup */
     static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
-    static std::pair<FixedVector<Edge>, unsigned> decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout);
-    static std::pair<FixedVector<Edge>, unsigned> decl_triangulate(VertexList& vertices);
+    static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout);
+    static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate(VertexList& vertices);
 
     /* Decomposition */
     void unconstrain_all();
@@ -381,7 +381,6 @@ class DECL {
      *
      * (not necessarily their content, but * at least the set and order) */
     VertexList all_vertices; /** The list of all vertices. */
-    unsigned number_of_ch_vertices; /** The number of vertices on the CH */
 
     FixedVector<Edge> all_edges; /** The list of all edges */
 
@@ -399,12 +398,13 @@ class DECL {
   private:
     unsigned shoot_hole_mark_triangles_in_face(Edge * const e);
     void shoot_hole_select_triangles(unsigned num_triangles);
+    std::vector<Edge*> shoot_hole_interior_edges() const;
     void shoot_hole(unsigned size, unsigned num_iterations, unsigned max_recurse);
     void shoot_holes(unsigned max_recurse);
 
   private:
     /* private constructor to make the public one use decl_triangulate's result. */
-    DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, unsigned>&& triangulation_result);
+    DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& triangulation_result);
   /* public interface */
   public:
     /** Initialize the DECL with the vertices and a triangulation of their CH */

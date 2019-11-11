@@ -42,16 +42,18 @@ assert_valid() const {
 #endif
 
 DECL::
-DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, unsigned>&& triangulation_result)
-  : all_vertices(std::forward<VertexList>(vertices))
-  , number_of_ch_vertices(triangulation_result.second)
-  , all_edges(std::forward<FixedVector<Edge>>(triangulation_result.first))
+DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& triangulation_result)
+  : all_vertices(std::move(vertices))
+  , all_edges(std::move(triangulation_result.first))
 {
+  working_set.shuffled_edges = std::move(triangulation_result.second);
+
+  unsigned number_of_ch_vertices = all_edges.size() - working_set.shuffled_edges.size();
   num_faces = 1 + (all_edges.size() + number_of_ch_vertices) / 2 - all_vertices.size();
 
   working_set.my_edges.resize(all_edges.size());
   std::iota(std::begin(working_set.my_edges), std::end(working_set.my_edges), all_edges.data());
-  working_set.shuffled_edges = working_set.my_edges;
+  //working_set.shuffled_edges = working_set.my_edges;
   working_set.num_my_triangles = num_faces;
   working_set.num_faces_mine_constrained = num_faces;
 }
@@ -76,10 +78,11 @@ decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin) 
 
 /** Process triangle's in/out data structure and create the DECL
  */
-std::pair<FixedVector<Edge>, unsigned>
+std::pair<FixedVector<Edge>, std::vector<Edge*>>
 DECL::
 decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout) {
   FixedVector<Edge> edges;
+  std::vector<Edge*> interior_edges;
 
   unsigned num_t = tout.numberoftriangles;
   unsigned num_e = tout.numberofedges;
@@ -88,6 +91,7 @@ decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout)
   int num_halfedges = num_e*2 - num_ch_v;
   assert(num_halfedges > 0);
   edges.reserve(num_halfedges);
+  interior_edges.reserve(num_halfedges - 3);
   Edge * edge_end = edges.data();
   int *tptr = tout.trianglelist;
   int *nptr = tout.neighborlist;
@@ -98,6 +102,7 @@ decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout)
       if (*nptr >= 0) {
         int our_index_in_neighbor = tnidx_by_nidx(tout.neighborlist + 3*(*nptr), i);
         buddy = &edges[3*(*nptr) + our_index_in_neighbor];
+        interior_edges.emplace_back(edge_end+j);
       } else {
         ++edges_on_ch;
       }
@@ -118,13 +123,13 @@ decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout)
   assert(num_t == 1 + (edges.size() + num_ch_v)/2 - vertices.size());
 
   // num_faces = num_t;
-  unsigned number_of_ch_vertices = num_ch_v;
-  return std::make_pair(std::move(edges), number_of_ch_vertices);
+  // unsigned number_of_ch_vertices = num_ch_v;
+  return std::make_pair(std::move(edges), std::move(interior_edges));
 }
 
 /** Triangulare the pointset and create the DECL
  */
-std::pair<FixedVector<Edge>, unsigned>
+std::pair<FixedVector<Edge>, std::vector<Edge*>>
 DECL::
 decl_triangulate(VertexList& vertices) {
   struct triangulateio tin, tout;
@@ -163,8 +168,7 @@ decl_triangulate(VertexList& vertices) {
 void
 DECL::
 unconstrain_all() {
-  //DBG_FUNC_BEGIN(DBG_GENERIC);
-  DBG_INDENT_INC();
+  DBG_FUNC_BEGIN(DBG_UNCONSTRAIN);
   // std::vector<Edge*> shuffled_edges = working_set.my_edges;
   std::shuffle(std::begin(working_set.shuffled_edges), std::end(working_set.shuffled_edges), random_engine);
 
@@ -178,9 +182,8 @@ unconstrain_all() {
     e->unconstrain();
     --num_faces;
   }
-  //DBG(DBG_GENERIC) << "Now have " << num_faces << "/" << old_num_faces << " faces";
-  DBG_INDENT_DEC();
-  //DBG_FUNC_END(DBG_GENERIC);
+  DBG(DBG_UNCONSTRAIN) << "Now have " << num_faces << "/" << old_num_faces << " faces";
+  DBG_FUNC_END(DBG_UNCONSTRAIN);
 }
 
 /** Mark all edges as constrained again, resetting everything. */
@@ -357,8 +360,31 @@ shoot_hole_select_triangles(unsigned num_triangles) {
   DBG(DBG_SHOOTHOLE) << "Selected " << num_marked_triangles << " triangles in " << num_marked_faces << " faces;  candidate list is " << marking_candidates.size() << " long";
 
   marking_candidates.clear();
-  for (auto& e : marked_halfedges) e->triangle_marked = false;
   DBG_FUNC_END(DBG_SHOOTHOLE2);
+}
+
+/** Identify interior edges of marked area
+ */
+std::vector<Edge *>
+DECL::
+shoot_hole_interior_edges() const {
+  DBG_FUNC_BEGIN(DBG_SHOOTHOLE2);
+
+  const unsigned depth = working_set.depth;
+  std::vector<Edge *> interior_edges;
+  interior_edges.reserve(marked_halfedges.size()-3);
+
+  for (auto& e : marked_halfedges) {
+    Edge* o = e->opposite;
+    if (o &&
+        o->triangle_marked &&
+        (o->working_set_depth == depth)) {
+      interior_edges.emplace_back(e);
+    }
+  }
+  DBG(DBG_SHOOTHOLE) << "Out of " << marked_halfedges.size() << " half-edges in hole, " << interior_edges.size() << " are in the interior";
+  DBG_FUNC_END(DBG_SHOOTHOLE2);
+  return interior_edges;
 }
 
 /** Find a simply-connected set of vertices, and make a hole, and improve its decomposition
@@ -372,13 +398,18 @@ shoot_hole(unsigned size, unsigned num_iterations, unsigned max_recurse) {
   if (num_faces <= 2) {
     DBG(DBG_SHOOTHOLE) << "No point in looking at hole with <=2 faces.";
 
+    for (auto& e : marked_halfedges) e->triangle_marked = false;
     marked_halfedges.clear();
     num_marked_triangles = 0;
     num_marked_faces = 0;
   } else {
+    std::vector<Edge *> interior_edges = shoot_hole_interior_edges();
+
+    for (auto& e : marked_halfedges) e->triangle_marked = false;
     WorkingSet other_workingset(
       working_set.depth + 1,
       std::move(marked_halfedges),
+      std::move(interior_edges),
       num_marked_triangles,
       num_faces - num_marked_faces + num_marked_triangles);
 
