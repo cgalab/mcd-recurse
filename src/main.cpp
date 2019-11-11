@@ -174,6 +174,7 @@ int main(int argc, char *argv[]) {
     decl.reset_constraints();
   }
 
+  DBG(DBG_GENERIC) << "Random seed was" << seed;
   if (best_num_faces > 0) {
     std::cout << "num_cvx_areas: " << best_num_faces << std::endl;
     std::cout << "num_iters: " << num_iters << std::endl;

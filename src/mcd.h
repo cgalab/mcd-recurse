@@ -22,8 +22,9 @@ extern std::default_random_engine random_engine;
 #define DBG_GENERIC                       ( 1u << 0 )
 #define DBG_ITERATORS                     ( 1u << 1 )
 #define DBG_SHOOTHOLE                     ( 1u << 2 )
-// #define DBG_STATESAVE                     ( 1u << 3 )
-// #define DBG_STATERESTORE                  ( 1u << 4 )
+#define DBG_SHOOTHOLE2                    ( 1u << 3 )
+// #define DBG_STATESAVE                     ( 1u << x )
+// #define DBG_STATERESTORE                  ( 1u << x )
 
 #define DEBUG_MASK (                  \
                 DBG_GENERIC                       | \
@@ -31,6 +32,8 @@ extern std::default_random_engine random_engine;
                 0 )
 /*
                 DBG_ITERATORS                     | \
+                DBG_SHOOTHOLE2                    | \
+
                 DBG_STATESAVE                     | \
                 DBG_STATERESTORE                  | \
 */
