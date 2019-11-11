@@ -6,11 +6,11 @@
 
 /** Parse a file and return a vertex list
  */
-std::shared_ptr<VertexList>
+VertexList
 load_vertices(std::istream& in) {
   std::string line;
 
-  auto res = std::make_shared<VertexList>();
+  VertexList res;
 
   int idx = 0;
   while (std::getline(in, line)) {
@@ -18,7 +18,7 @@ load_vertices(std::istream& in) {
     std::stringstream ss(line);
     double x, y;
     ss >> x >> y;
-    res->emplace_back(Vertex(x, y, idx++));
+    res.emplace_back(Vertex(x, y, idx++));
   }
 
   return res;

@@ -41,18 +41,18 @@ assert_valid() const {
 }
 #endif
 
-/** Initialize the DECL with the vertices and a triangulation of their CH */
 DECL::
-DECL(std::shared_ptr<VertexList> vertices)
-: all_vertices(vertices)
+DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, unsigned>&& triangulation_result)
+  : all_vertices(std::forward<VertexList>(vertices))
+  , number_of_ch_vertices(triangulation_result.second)
+  , all_edges(std::forward<FixedVector<Edge>>(triangulation_result.first))
 {
-  decl_triangulate(*vertices); /* sets all_edges, and num_faces */
+  num_faces = 1 + (all_edges.size() + number_of_ch_vertices) / 2 - all_vertices.size();
 
-  state.my_edges.resize(all_edges.size());
-  std::iota(std::begin(state.my_edges), std::end(state.my_edges), all_edges.data());
-
-  state.num_faces_mine_constrained = state.num_faces;
-  state.num_my_triangles = state.num_faces;
+  working_set.my_edges.resize(all_edges.size());
+  std::iota(std::begin(working_set.my_edges), std::end(working_set.my_edges), all_edges.data());
+  working_set.num_my_triangles = num_faces;
+  working_set.num_faces_mine_constrained = num_faces;
 }
 
 /** Prepare triangle's in/out data structure with the vertex list
@@ -75,31 +75,34 @@ decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin) 
 
 /** Process triangle's in/out data structure and create the DECL
  */
-void
+std::pair<FixedVector<Edge>, unsigned>
 DECL::
 decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout) {
-  int num_t = tout.numberoftriangles;
-  int num_e = tout.numberofedges;
-  int num_ch_v = tout.numberofsegments;
+  FixedVector<Edge> edges;
+
+  unsigned num_t = tout.numberoftriangles;
+  unsigned num_e = tout.numberofedges;
+  unsigned num_ch_v = tout.numberofsegments;
 
   int num_halfedges = num_e*2 - num_ch_v;
-  all_edges.reserve(num_halfedges);
-  Edge * edge_end = &all_edges[0];
+  assert(num_halfedges > 0);
+  edges.reserve(num_halfedges);
+  Edge * edge_end = edges.data();
   int *tptr = tout.trianglelist;
   int *nptr = tout.neighborlist;
-  int edges_on_ch = 0;
-  for (int i=0; i<num_t; ++i) {
-    for (int j=0; j<3; ++j) {
+  unsigned edges_on_ch = 0;
+  for (unsigned i=0; i<num_t; ++i) {
+    for (unsigned j=0; j<3; ++j) {
       Edge *buddy = NULL;
       if (*nptr >= 0) {
         int our_index_in_neighbor = tnidx_by_nidx(tout.neighborlist + 3*(*nptr), i);
-        buddy = &all_edges[3*(*nptr) + our_index_in_neighbor];
+        buddy = &edges[3*(*nptr) + our_index_in_neighbor];
       } else {
         ++edges_on_ch;
       }
       int edge_points_to_vertex_idx = tptr[ prev_edge_offset[j] ];
       Vertex *edge_points_to_vertex = &vertices[edge_points_to_vertex_idx];
-      all_edges.emplace_back(Edge(edge_end+next_edge_offset[j], edge_end+prev_edge_offset[j], buddy, edge_points_to_vertex, all_edges.size()));
+      edges.emplace_back(Edge(edge_end+next_edge_offset[j], edge_end+prev_edge_offset[j], buddy, edge_points_to_vertex, edges.size()));
       ++nptr;
     }
     edge_end += 3;
@@ -108,15 +111,19 @@ decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout)
   assert(num_ch_v == edges_on_ch);
   assert(tptr == tout.trianglelist + 3*num_t);
   assert(nptr == tout.neighborlist + 3*num_t);
-  assert(edge_end == &all_edges[num_halfedges]);
+  assert(edge_end == &edges[num_halfedges]);
 
-  state.num_faces = num_t;
-  // num_vertices_on_boundary = num_ch_v;
+  assert((edges.size() + num_ch_v) % 2 == 0);
+  assert(num_t == 1 + (edges.size() + num_ch_v)/2 - vertices.size());
+
+  // num_faces = num_t;
+  unsigned number_of_ch_vertices = num_ch_v;
+  return std::make_pair(std::move(edges), number_of_ch_vertices);
 }
 
 /** Triangulare the pointset and create the DECL
  */
-void
+std::pair<FixedVector<Edge>, unsigned>
 DECL::
 decl_triangulate(VertexList& vertices) {
   struct triangulateio tin, tout;
@@ -137,7 +144,7 @@ decl_triangulate(VertexList& vertices) {
    */
   char trioptions[] = "Qcnz";
   triangulate(trioptions, &tin, &tout, NULL);
-  decl_triangulate_process(vertices, tout);
+  auto res = decl_triangulate_process(vertices, tout);
 
   my_free_c(tin.pointlist);
   my_free_c(tin.segmentlist);
@@ -147,6 +154,7 @@ decl_triangulate(VertexList& vertices) {
   my_free_c(tout.pointmarkerlist);
   my_free_c(tout.segmentlist);
   my_free_c(tout.segmentmarkerlist);
+  return res;
 }
 
 
@@ -156,10 +164,10 @@ DECL::
 unconstrain_all() {
   //DBG_FUNC_BEGIN(DBG_GENERIC);
   DBG_INDENT_INC();
-  std::vector<Edge*> shuffled_edges = state.my_edges;
+  std::vector<Edge*> shuffled_edges = working_set.my_edges;
   std::shuffle(std::begin(shuffled_edges), std::end(shuffled_edges), random_engine);
 
-  int old_num_faces = state.num_faces;
+  int old_num_faces = num_faces;
   for (Edge * const e : shuffled_edges) {
     /* Only check one edge of each half-edge-pair */
     if (e->opposite == NULL) continue;
@@ -167,7 +175,7 @@ unconstrain_all() {
 
     if (! e->can_unconstrain()) continue;
     e->unconstrain();
-    --state.num_faces;
+    --num_faces;
   }
   //DBG(DBG_GENERIC) << "Now have " << num_faces << "/" << old_num_faces << " faces";
   DBG_INDENT_DEC();
@@ -181,10 +189,10 @@ reset_constraints() {
   //DBG_FUNC_BEGIN(DBG_GENERIC);
   DBG_INDENT_INC();
   assert_hole_shooting_reset();
-  for (Edge * const e : state.my_edges) {
+  for (Edge * const e : working_set.my_edges) {
     e->reset_all_constraints();
   }
-  state.num_faces = state.num_faces_mine_constrained;
+  num_faces = working_set.num_faces_mine_constrained;
   DBG_INDENT_DEC();
   //DBG_FUNC_END(DBG_GENERIC);
 }
@@ -229,7 +237,36 @@ get_next_face_ccw(Edge *e) const {
   return r;
 }
 
+/** Save the decomposition of the edges in a working set.
+ */
+DECL::SavedDecomposition::
+SavedDecomposition(const WorkingSet& ws, int num_faces) :
+  saved_num_faces(num_faces)
+{
+  edge_content.reserve(ws.my_edges.size());
+  for (Edge * const e : ws.my_edges) {
+    edge_content.emplace_back(*e);
+  }
+}
+
+/** Re-inject a saved decomposition.
+ */
+void
+DECL::
+reinject_saved_decomposition(SavedDecomposition&& saved_decomposition) {
+  assert(saved_decomposition.edge_content.size() == working_set.my_edges.size());
+
+  unsigned size = working_set.my_edges.size();
+  for (unsigned i = 0; i<size; ++i) {
+    std::swap(*working_set.my_edges[i], saved_decomposition.edge_content[i]);
+  }
+  num_faces = saved_decomposition.saved_num_faces;
+}
+
+
 #if 0
+/** Save the state of a region
+ */
 DECL::SavedState::
 SavedState(std::vector<Edge*>&& my_edges_, int num_my_triangles_, int num_faces_mine_constrained_, int num_faces_)
   : Base(std::forward<std::vector<Edge*>>(my_edges_), num_my_triangles_, num_faces_mine_constrained_, num_faces_)
@@ -239,32 +276,8 @@ SavedState(std::vector<Edge*>&& my_edges_, int num_my_triangles_, int num_faces_
     edge_content.emplace_back(*e);
   }
 }
+
 #endif
-DECL::SavedState::
-SavedState(const RelevantState& o)
-  : Base(o)
-{
-  edge_content.reserve(my_edges.size());
-  for (Edge * const e : my_edges) {
-    edge_content.emplace_back(*e);
-  }
-}
-
-/** Re-inject saved state.
- *
- * This invalidates state.
- */
-void
-DECL::
-reinject_saved_state(SavedState&& saved_state) {
-  assert(saved_state.my_edges.size() == saved_state.edge_content.size());
-
-  unsigned size = saved_state.my_edges.size();
-  for (unsigned i = 0; i<size; ++i) {
-    std::swap(*saved_state.my_edges[i], saved_state.edge_content[i]);
-  }
-  state = std::forward<RelevantState>(saved_state);
-}
 
 
 
@@ -276,16 +289,16 @@ shoot_hole(unsigned size, int num_iterations, int max_recurse) {
   DBG_INDENT_INC();
 
   assert_hole_shooting_reset();
+
   #if 0
   shoot_hole_select_vertices(size);
+  SavedState state(edges, halfedges_to_remove, faces_removed, vertices_to_remove.size() + removal_boundary_vertices.size(), removal_boundary_vertices.size() + vertices_to_remove_on_ch );
 
-    SavedState state(edges, halfedges_to_remove, faces_removed, vertices_to_remove.size() + removal_boundary_vertices.size(), removal_boundary_vertices.size() + vertices_to_remove_on_ch );
-    assert_hole_shooting_vertices_clean();
-
-    DECL child(all_vertices, state);
-
-    /* Recurse here */
+  /* in-place recursion here */
+  find_convex_decomposition(num_iterations, state.num_faces, max_recurse);
+  xx
   #endif
+
   DBG_INDENT_DEC();
 }
 
@@ -294,12 +307,11 @@ DECL::
 shoot_holes(int max_recurse) {
   DBG_INDENT_INC();
 
-  #if 0
-  int hole_size = state.num_my_triangles;
+  int hole_size = working_set.num_my_triangles;
   while (hole_size >= 10) {
     hole_size = int(std::pow(double(hole_size), 2./3));
     int number_of_decompositions_per_hole = hole_size;
-    int number_of_hole_punches = state.num_my_triangles/hole_size * NUMBER_OF_HOLE_PUNCHES_SCALE;
+    int number_of_hole_punches = working_set.num_my_triangles/hole_size * NUMBER_OF_HOLE_PUNCHES_SCALE;
 
     DBG(DBG_GENERIC)
       << "Calling shoot_hole " << number_of_hole_punches << " times"
@@ -311,41 +323,40 @@ shoot_holes(int max_recurse) {
         if ( (number_of_decompositions_per_hole >  100 && i % 100 == 0)
           || (number_of_decompositions_per_hole <= 100 && i % 500 == 0)
               ) {
-          DBG(DBG_GENERIC) << "i: " << i << "; current num faces: " << state.num_faces;
+          DBG(DBG_GENERIC) << "i: " << i << "; current num faces: " << num_faces;
         }
       });
       shoot_hole(hole_size, number_of_decompositions_per_hole, max_recurse);
       assert_hole_shooting_reset();
     }
   };
-  #endif
 
   DBG_INDENT_DEC();
 }
 void
 DECL::
-find_convex_decomposition(int num_iterations, int initial_num_faces_to_beat, int max_recurse) {
+find_convex_decomposition(unsigned num_iterations, unsigned initial_num_faces_to_beat, unsigned max_recurse) {
   DBG_FUNC_BEGIN(DBG_GENERIC);
 
-  assert_hole_shooting_vertices_clean();
-
-  int num_faces_to_beat = initial_num_faces_to_beat ? initial_num_faces_to_beat : state.num_faces;
+  unsigned num_faces_to_beat = initial_num_faces_to_beat ? initial_num_faces_to_beat : num_faces;
   bool have_solution = false;
   bool current_is_best = false;
-  SavedState best = SavedState(state);
-  int iter = 0;
+  SavedDecomposition best = SavedDecomposition(working_set, num_faces);
+  unsigned iter = 0;
   while (1) {
     unconstrain_all();
     if (max_recurse > 0) {
       shoot_holes(max_recurse-1);
     }
 
-    current_is_best = (state.num_faces < num_faces_to_beat);
+    current_is_best = (num_faces < num_faces_to_beat);
     if (current_is_best) {
-      DBG(DBG_GENERIC) << "Iteration " << iter << "/" << num_iterations << ": Improved solution: " << num_faces_to_beat << "->" << state.num_faces;
+      DBG(DBG_GENERIC) << "Iteration " << iter << "/" << num_iterations << ": This solution: " << num_faces << "; NEW BEST; previous best: " << num_faces_to_beat;
       have_solution = true;
-      num_faces_to_beat = state.num_faces;
-      best = SavedState(state);
+      num_faces_to_beat = num_faces;
+      best = SavedDecomposition(working_set, num_faces);
+    } else {
+      DBG(DBG_GENERIC) << "Iteration " << iter << "/" << num_iterations << ": This solution: " << num_faces << "; current best: " << num_faces_to_beat;
     }
     ++iter;
 
@@ -360,10 +371,11 @@ find_convex_decomposition(int num_iterations, int initial_num_faces_to_beat, int
     DBG(DBG_GENERIC) << "Done " << num_iterations << " iterations.  We failed to improve on the bound of " << num_faces_to_beat << " faces";
   };
   if (!current_is_best) {
-    reinject_saved_state(std::move(best));
+    DBG(DBG_GENERIC) << "Re-injecting saved decomposition with " << best.saved_num_faces << " faces";
+    reinject_saved_decomposition(std::move(best));
   };
   assert_hole_shooting_reset();
-  assert(num_faces_to_beat == state.num_faces);
+  assert(num_faces_to_beat == num_faces);
 
   DBG_FUNC_END(DBG_GENERIC);
 }
@@ -388,7 +400,7 @@ void
 DECL::
 write_obj_segments(bool dump_vertices, std::ostream &o) const {
   if (dump_vertices) {
-    for (const auto &v : *all_vertices) {
+    for (const auto &v : all_vertices) {
       o << "v " << v.x << " " << v.y << " 0" << std::endl;
     }
   }
@@ -396,8 +408,8 @@ write_obj_segments(bool dump_vertices, std::ostream &o) const {
     if (!e.is_constrained) continue;
     if (e.opposite && e.opposite < &e) continue;
 
-    int tail_idx = (e.get_tail() - all_vertices->data())+1;
-    int head_idx = (e.v - all_vertices->data())+1;
+    int tail_idx = (e.get_tail() - all_vertices.data())+1;
+    int head_idx = (e.v - all_vertices.data())+1;
 
     o << "l "
       << tail_idx

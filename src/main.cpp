@@ -126,8 +126,6 @@ int main(int argc, char *argv[]) {
   }
 
 
-  std::shared_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
-
   auto start_time = std::chrono::system_clock::now();
   auto end_time = start_time + std::chrono::seconds(max_time);
 
@@ -143,7 +141,7 @@ int main(int argc, char *argv[]) {
   std::cout << "random_seed: " << seed << std::endl << std::flush;
   random_engine.seed(seed);
 
-  DECL decl(vertexlist);
+  DECL decl( load_vertices(*in) );
   while (1) {
     decl.assert_valid();
     decl.find_convex_decomposition(1);

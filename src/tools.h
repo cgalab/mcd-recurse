@@ -26,11 +26,6 @@ struct FixedVector
     FixedVector(FixedVector&&) noexcept = default;
     FixedVector& operator=(FixedVector&&) noexcept = default;
 
-
-    //SavedState& operator= (const SavedState&) = default;
-    //SavedState& operator= (SavedState&&) = default;
-    //SavedState(SavedState&& o) = default;
-
     using const_iterator = typename Base::const_iterator;
 
     void reserve(size_type new_size) {
