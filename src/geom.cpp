@@ -51,6 +51,7 @@ DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, unsigned>&& triangulati
 
   working_set.my_edges.resize(all_edges.size());
   std::iota(std::begin(working_set.my_edges), std::end(working_set.my_edges), all_edges.data());
+  working_set.shuffled_edges = working_set.my_edges;
   working_set.num_my_triangles = num_faces;
   working_set.num_faces_mine_constrained = num_faces;
 }
@@ -164,11 +165,11 @@ DECL::
 unconstrain_all() {
   //DBG_FUNC_BEGIN(DBG_GENERIC);
   DBG_INDENT_INC();
-  std::vector<Edge*> shuffled_edges = working_set.my_edges;
-  std::shuffle(std::begin(shuffled_edges), std::end(shuffled_edges), random_engine);
+  // std::vector<Edge*> shuffled_edges = working_set.my_edges;
+  std::shuffle(std::begin(working_set.shuffled_edges), std::end(working_set.shuffled_edges), random_engine);
 
   int old_num_faces = num_faces;
-  for (Edge * const e : shuffled_edges) {
+  for (Edge * const e : working_set.shuffled_edges) {
     /* Only check one edge of each half-edge-pair */
     if (e->opposite == NULL) continue;
     if (e->opposite < e) continue;

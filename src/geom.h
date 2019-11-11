@@ -304,6 +304,7 @@ class DECL {
   public:
     unsigned depth = 0; /** A recursion depth marker to match with each edge's working_set_depth */
     std::vector<Edge*> my_edges; /** The list of edges we are working on right now */
+    std::vector<Edge*> shuffled_edges; /** The list of edges we are working on right now, in random order */
     unsigned num_my_triangles; /** The number of triangles incident to my_edges.
                                    This is identical to the number of faces when all
                                    of my_edges are constrained.  Note that not all
@@ -319,6 +320,7 @@ class DECL {
     WorkingSet(unsigned depth_, std::vector<Edge*>&& my_edges_, int num_my_triangles_, int num_faces_mine_constrained_)
       : depth(depth_)
       , my_edges(std::forward< std::vector<Edge*> >(my_edges_))
+      , shuffled_edges(my_edges)
       , num_my_triangles(num_my_triangles_)
       , num_faces_mine_constrained(num_faces_mine_constrained_)
     {}
