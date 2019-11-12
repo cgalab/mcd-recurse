@@ -399,20 +399,24 @@ class DECL {
     unsigned shoot_hole_mark_triangles_in_face(Edge * const e);
     void shoot_hole_select_triangles(unsigned num_triangles);
     std::vector<Edge*> shoot_hole_interior_edges() const;
-    void shoot_hole(unsigned size, unsigned num_iterations, unsigned max_recurse);
-    void shoot_holes(unsigned max_recurse);
+    void shoot_hole(unsigned size);
+    void shoot_holes();
 
   private:
     /* private constructor to make the public one use decl_triangulate's result. */
     DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& triangulation_result);
+
+    /* optimization in punched hole */
+    void find_convex_decomposition_many(unsigned num_iterations);
+
   /* public interface */
   public:
     /** Initialize the DECL with the vertices and a triangulation of their CH */
     DECL(VertexList&& vertices)
     : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices)) {}
 
-    void find_convex_decomposition(unsigned num_iterations, unsigned num_faces_to_beat=0, unsigned max_recurse=1);
     void reset_constraints();
+    void find_convex_decomposition();
 
     void write_obj_segments(bool dump_vertices, std::ostream &o) const;
     unsigned get_num_faces() const { return num_faces; }

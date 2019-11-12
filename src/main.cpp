@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
   DECL decl( load_vertices(*in) );
   while (1) {
     decl.assert_valid();
-    decl.find_convex_decomposition(1);
+    decl.find_convex_decomposition();
     decl.assert_valid();
 
     ++num_iters;

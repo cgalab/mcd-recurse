@@ -53,7 +53,6 @@ DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& t
 
   working_set.my_edges.resize(all_edges.size());
   std::iota(std::begin(working_set.my_edges), std::end(working_set.my_edges), all_edges.data());
-  //working_set.shuffled_edges = working_set.my_edges;
   working_set.num_my_triangles = num_faces;
   working_set.num_faces_mine_constrained = num_faces;
 }
@@ -169,7 +168,6 @@ void
 DECL::
 unconstrain_all() {
   DBG_FUNC_BEGIN(DBG_UNCONSTRAIN);
-  // std::vector<Edge*> shuffled_edges = working_set.my_edges;
   std::shuffle(std::begin(working_set.shuffled_edges), std::end(working_set.shuffled_edges), random_engine);
 
   int old_num_faces = num_faces;
@@ -302,7 +300,7 @@ shoot_hole_mark_triangles_in_face(Edge * const e_start) {
         te->triangle_marked = true;
         Edge* o = te->opposite;
         if (te->is_constrained && o && (o->working_set_depth == depth) && !o->triangle_marked) {
-          DBG(DBG_SHOOTHOLE2) << "  Adding buddy triangle as a marking candidate";
+          DBG(DBG_SHOOTHOLE2) << "  Adding buddy triangle as a marking candidate: " << *o;
           marking_candidates.emplace_back(o);
         }
       }
@@ -327,16 +325,16 @@ shoot_hole_mark_triangles_in_face(Edge * const e_start) {
 
 /** Mark triangles for local improvement.
  *
- * We mark at least num_triangles triangles, and then some to finish out the current decomposition face.
+ * We mark select_num_faces faces.
  */
 void
 DECL::
-shoot_hole_select_triangles(unsigned num_triangles) {
+shoot_hole_select_triangles(unsigned select_num_faces) {
   DBG_FUNC_BEGIN(DBG_SHOOTHOLE2);
   assert_hole_shooting_reset();
 
-  marking_candidates.reserve(2*num_triangles);
-  marked_halfedges.reserve(4*num_triangles);
+  //marking_candidates.reserve(2*num_triangles);
+  //marked_halfedges.reserve(4*num_triangles);
     /* Slightly larger than just 3*num_triangles since might need the extra bit when
      * finishing up a face.
      */
@@ -344,10 +342,9 @@ shoot_hole_select_triangles(unsigned num_triangles) {
   marking_candidates.emplace_back(random_edge);
 
   Edge** candidate = marking_candidates.data();
-  while (num_marked_triangles < num_triangles) {
-    assert(candidate <= &marking_candidates.back());
-    Edge* e = *candidate;
-
+  unsigned candidate_idx = 0;
+  while (num_marked_faces < select_num_faces && candidate_idx < marking_candidates.size()) {
+    Edge* e = marking_candidates[candidate_idx];
     if (e->triangle_marked) {
       DBG(DBG_SHOOTHOLE2) << "Face already marked for removal.";
       DBG(DBG_SHOOTHOLE2) << "  t: " << e->v->idx() << ", " << e->next->v->idx() << ", " << e->prev->v->idx();
@@ -355,9 +352,9 @@ shoot_hole_select_triangles(unsigned num_triangles) {
       num_marked_triangles += shoot_hole_mark_triangles_in_face(e);
       num_marked_faces += 1;
     }
-    ++candidate;
+    ++candidate_idx;
   }
-  DBG(DBG_SHOOTHOLE) << "Selected " << num_marked_triangles << " triangles in " << num_marked_faces << " faces;  candidate list is " << marking_candidates.size() << " long";
+  DBG(DBG_SHOOTHOLE2) << "Selected " << num_marked_triangles << " triangles in " << num_marked_faces << " faces;  candidate list is " << marking_candidates.size() << " long";
 
   marking_candidates.clear();
   DBG_FUNC_END(DBG_SHOOTHOLE2);
@@ -382,7 +379,7 @@ shoot_hole_interior_edges() const {
       interior_edges.emplace_back(e);
     }
   }
-  DBG(DBG_SHOOTHOLE) << "Out of " << marked_halfedges.size() << " half-edges in hole, " << interior_edges.size() << " are in the interior";
+  DBG(DBG_SHOOTHOLE2) << "Out of " << marked_halfedges.size() << " half-edges in hole, " << interior_edges.size() << " are in the interior";
   DBG_FUNC_END(DBG_SHOOTHOLE2);
   return interior_edges;
 }
@@ -391,11 +388,12 @@ shoot_hole_interior_edges() const {
  */
 void
 DECL::
-shoot_hole(unsigned size, unsigned num_iterations, unsigned max_recurse) {
+shoot_hole(unsigned select_num_faces) {
   DBG_INDENT_INC();
 
-  shoot_hole_select_triangles(size);
-  if (num_faces <= 2) {
+  shoot_hole_select_triangles(select_num_faces);
+  #if 0
+  if (num_marked_faces <= 2) {
     DBG(DBG_SHOOTHOLE) << "No point in looking at hole with <=2 faces.";
 
     for (auto& e : marked_halfedges) e->triangle_marked = false;
@@ -403,30 +401,33 @@ shoot_hole(unsigned size, unsigned num_iterations, unsigned max_recurse) {
     num_marked_triangles = 0;
     num_marked_faces = 0;
   } else {
-    std::vector<Edge *> interior_edges = shoot_hole_interior_edges();
+  //}
+  #endif
 
-    for (auto& e : marked_halfedges) e->triangle_marked = false;
-    WorkingSet other_workingset(
-      working_set.depth + 1,
-      std::move(marked_halfedges),
-      std::move(interior_edges),
-      num_marked_triangles,
-      num_faces - num_marked_faces + num_marked_triangles);
+  std::vector<Edge *> interior_edges = shoot_hole_interior_edges();
 
-    marked_halfedges.clear();
-    num_marked_triangles = 0;
-    num_marked_faces = 0;
+  for (auto& e : marked_halfedges) e->triangle_marked = false;
+  WorkingSet other_workingset(
+    working_set.depth + 1,
+    std::move(marked_halfedges),
+    std::move(interior_edges),
+    num_marked_triangles,
+    num_faces - num_marked_faces + num_marked_triangles);
+
+  marked_halfedges.clear();
+  num_marked_triangles = 0;
+  num_marked_faces = 0;
 
 
+  std::swap(working_set, other_workingset);
+  for (auto& e : working_set.my_edges) ++e->working_set_depth;
+
+  unsigned num_iterations = working_set.shuffled_edges.size();
+  /* in-place optimization here */
+  find_convex_decomposition_many(num_iterations);
+
+  for (auto& e : working_set.my_edges) --e->working_set_depth;
     std::swap(working_set, other_workingset);
-    for (auto& e : working_set.my_edges) ++e->working_set_depth;
-
-    /* in-place recursion here */
-    find_convex_decomposition(num_iterations, num_faces, max_recurse);
-
-    for (auto& e : working_set.my_edges) --e->working_set_depth;
-    std::swap(working_set, other_workingset);
-  }
 
 
   DBG_INDENT_DEC();
@@ -434,43 +435,32 @@ shoot_hole(unsigned size, unsigned num_iterations, unsigned max_recurse) {
 
 void
 DECL::
-shoot_holes(unsigned max_recurse) {
+shoot_holes() {
   DBG_INDENT_INC();
 
-  unsigned hole_size = working_set.num_my_triangles;
-  while (1) {
-    hole_size = int(std::pow(double(hole_size), 2./3));
-    unsigned number_of_decompositions_per_hole = hole_size;
-    unsigned number_of_hole_punches = working_set.num_my_triangles/hole_size * NUMBER_OF_HOLE_PUNCHES_SCALE;
-    if (hole_size < 15) break;
+  static std::geometric_distribution<unsigned> distribution = std::geometric_distribution<unsigned>(0.4);
+  unsigned number_of_hole_punches = num_faces;
 
-    DBG(DBG_SHOOTHOLE)
-      << "Calling shoot_hole " << number_of_hole_punches << " times"
-      << "; hole_size: " << hole_size
-      << "; number_of_decompositions_per_hole: " << number_of_decompositions_per_hole
-      << "; max_recurse: " << max_recurse;
-    for (unsigned i=0; i<number_of_hole_punches; ++i) {
-      DEBUG_STMT({
-        if ( (number_of_decompositions_per_hole >  100 && i % 100 == 0)
-          || (number_of_decompositions_per_hole <= 100 && i % 500 == 0)
-              ) {
-          DBG(DBG_SHOOTHOLE) << "i: " << i << "; current num faces: " << num_faces;
-        }
-      });
-      shoot_hole(hole_size, number_of_decompositions_per_hole, max_recurse);
-      assert_hole_shooting_reset();
-    }
+  DBG(DBG_SHOOTHOLE)
+    << "Calling shoot_hole " << number_of_hole_punches << " times";
+  for (unsigned i=0; i<number_of_hole_punches; ++i) {
+    unsigned hole_size = 7 + distribution(random_engine);
+    DBG(DBG_SHOOTHOLE2) << "  Number of faces: " << hole_size;
+    shoot_hole(hole_size);
+    assert_hole_shooting_reset();
   };
 
   DBG_INDENT_DEC();
 }
 void
 DECL::
-find_convex_decomposition(unsigned num_iterations, unsigned initial_num_faces_to_beat, unsigned max_recurse) {
+find_convex_decomposition_many(unsigned num_iterations) {
   DBG_FUNC_BEGIN(DBG_DECOMPOSITION_LOOP);
 
-  unsigned num_faces_to_beat = initial_num_faces_to_beat ? initial_num_faces_to_beat : num_faces;
+  unsigned initial_num_faces_to_beat = num_faces;
+  unsigned num_faces_to_beat = initial_num_faces_to_beat;
   bool have_solution = false;
+  int solution_from_iter = -1;
   bool current_is_best = false;
   SavedDecomposition best = SavedDecomposition(working_set, num_faces);
   for (unsigned iter = 0; iter < num_iterations; ++iter) {
@@ -479,14 +469,12 @@ find_convex_decomposition(unsigned num_iterations, unsigned initial_num_faces_to
 
     assert_valid();
     unconstrain_all();
-    if (max_recurse > 0) {
-      shoot_holes(max_recurse-1);
-    }
 
     current_is_best = (num_faces < num_faces_to_beat);
     if (current_is_best) {
       DBG(DBG_DECOMPOSITION_LOOP) << "Iteration " << iter << "/" << num_iterations << ": This solution: " << num_faces << "; NEW BEST; previous best: " << num_faces_to_beat;
       have_solution = true;
+      solution_from_iter = iter;
       num_faces_to_beat = num_faces;
       best = SavedDecomposition(working_set, num_faces);
     } else {
@@ -495,9 +483,20 @@ find_convex_decomposition(unsigned num_iterations, unsigned initial_num_faces_to
   }
 
   if (have_solution) {
-    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  Best now is " << num_faces_to_beat << " from " << initial_num_faces_to_beat;
+    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  Best now is " << num_faces_to_beat << " from " << initial_num_faces_to_beat
+      << "; found in iteration (#/max/#triangles): "
+      << solution_from_iter
+      << ", " << num_iterations
+      << ", " << working_set.shuffled_edges.size()
+      ;
   } else {
-    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  We failed to improve on the bound of " << num_faces_to_beat << " faces";
+    //DBG(              DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  We failed to improve on the bound of " << num_faces_to_beat << " faces";
+    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  No new best:" << num_faces_to_beat << " from " << initial_num_faces_to_beat
+      << "; found in iteration (#/max/#triangles): "
+      << solution_from_iter
+      << ", " << num_iterations
+      << ", " << working_set.shuffled_edges.size()
+      ;
   };
   if (!current_is_best) {
     DBG(DBG_DECOMPOSITION_LOOP) << "Re-injecting saved decomposition with " << best.saved_num_faces << " faces";
@@ -506,6 +505,24 @@ find_convex_decomposition(unsigned num_iterations, unsigned initial_num_faces_to
   assert_valid();
   assert_hole_shooting_reset();
   assert(num_faces_to_beat == num_faces);
+
+  DBG_FUNC_END(DBG_DECOMPOSITION_LOOP);
+}
+
+void
+DECL::
+find_convex_decomposition() {
+  DBG_FUNC_BEGIN(DBG_DECOMPOSITION_LOOP);
+
+  assert_valid();
+  if (working_set.num_my_triangles != num_faces) {
+    reset_constraints();
+  }
+  unconstrain_all();
+  shoot_holes();
+
+  assert_valid();
+  assert_hole_shooting_reset();
 
   DBG_FUNC_END(DBG_DECOMPOSITION_LOOP);
 }
