@@ -4,6 +4,7 @@ set(_target "mcd-recurse")
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+add_definitions(-DELPP_CUSTOM_COUT=std::cerr)
 set_source_files_properties(easyloggingpp/src/easylogging++.cc PROPERTIES COMPILE_FLAGS "-Wno-float-equal -Wno-missing-noreturn -Wno-unknown-pragmas -Wno-shadow")
 add_definitions(-DTRILIBRARY)
 add_definitions(-DANSI_DECLARATORS)
