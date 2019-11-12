@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
       LOG(INFO) << "We ran for " << num_iters_since_improved << " without improving on " << initial_to_beat;
       break;
     } else if (UNLIKELY(max_time != 0 && now > end_time)) {
-      LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " total.)";
+      LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " iterations total.)";
       break;
     };
   }
