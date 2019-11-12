@@ -5,8 +5,6 @@
 #include <cmath>
 #include <iomanip>
 
-#define NUMBER_OF_HOLE_PUNCHES_SCALE 10
-
 static const int next_edge_offset[] = {1,2,0};
 static const int prev_edge_offset[] = {2,0,1}; /* also same as vertex index that an edge points towards */
 

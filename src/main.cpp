@@ -12,6 +12,9 @@ INITIALIZE_EASYLOGGINGPP
 unsigned DBG_INDENT_CTR = 0;
 std::default_random_engine random_engine;
 
+/*seconds*/
+#define LOG_INTERVAL 60
+
 static void
 setup_logging(int argc, char* argv[]) {
   START_EASYLOGGINGPP(argc, argv);
@@ -128,6 +131,8 @@ int main(int argc, char *argv[]) {
 
   auto start_time = std::chrono::system_clock::now();
   auto end_time = start_time + std::chrono::seconds(max_time);
+  auto last_info_time = std::chrono::system_clock::now();
+  auto info_interval = std::chrono::seconds(LOG_INTERVAL);
 
   int num_iters = 0;
   int best_seed = 0;
@@ -149,8 +154,12 @@ int main(int argc, char *argv[]) {
 
     ++num_iters;
 
+    auto now = std::chrono::system_clock::now();
     int this_num_faces = decl.get_num_faces();
-    DBG(DBG_GENERIC) << "This num faces " << this_num_faces;
+    if (now > last_info_time + info_interval) {
+      LOG(INFO) << "Iter " << num_iters << "/" << min_runs << "; This num faces " << this_num_faces;
+      last_info_time = now;
+    }
 
     if (this_num_faces < best_num_faces || best_num_faces == 0) {
       have_solution = true;
@@ -162,12 +171,12 @@ int main(int argc, char *argv[]) {
 
     if ( (this_num_faces <= lower_bound)
       || (have_solution && num_iters >= min_runs)
-      || (max_time != 0 && std::chrono::system_clock::now() > end_time)
+      || (max_time != 0 && now > end_time)
       ) {
       /*
       std::cerr << "a: " << (this_num_faces <= lower_bound) << std::endl;
       std::cerr << "b: " << (have_solution && num_iters >= min_runs) << std::endl;
-      std::cerr << "c: " << (max_time != 0 && std::chrono::system_clock::now() > end_time) << std::endl;
+      std::cerr << "c: " << (max_time != 0 && now > end_time) << std::endl;
       */
       break;
     };
