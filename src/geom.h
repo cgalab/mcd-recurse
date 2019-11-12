@@ -8,17 +8,11 @@
 class Edge;
 class DECL;
 
+// {{{ Vertex
 class Vertex {
-
 public:
   const double x;
   const double y;
-
-private:
-  /* When shooting holes in the DECL, we store information here */
-  bool vertex_to_be_removed = false;
-  bool vertex_on_removal_boundary = false;
-  bool vertex_on_outer_removal_boundary = false;
 
 public:
 #ifndef NDEBUG
@@ -52,7 +46,9 @@ public:
   friend std::ostream& operator<<(std::ostream&, const Vertex&);
 };
 using VertexList = std::vector<Vertex>;
+// }}}
 
+// {{{ Edge
 /** A multi-layer half-edge data structure.
  *
  * Edges come in two forms:  constraints and triangulation edges.
@@ -63,10 +59,8 @@ using VertexList = std::vector<Vertex>;
  * Some of the triangulation edges are also constraints.  These will,
  * additionally have next/prev links to the next constrained edge.
  */
-class Edge {
-  friend class DECL;
-  friend std::ostream& operator<<(std::ostream&, const DECL&);
-
+class BaseEdge {
+  protected:
   bool is_constrained = 1; /** Whether this is a constrained edge, i.e., one that is a boundary of a face in our convex decomposition */
   Edge *opposite;          /** Pointer to the buddy of this edge.  NULL indicates that this edge is on the CH. */
   Edge *next;              /** Pointer to the next edge of this triangle. This edge will start at Vertex v. */
@@ -74,22 +68,42 @@ class Edge {
   Edge *next_constrained;  /** If constrained, pointer to the next constrained edge of this (decomposition) face.  This edge will start at Vertex v. */
   Edge *prev_constrained;  /** If constrained, pointer to the previous constrained edge of this (decomposition) face. */
   Vertex *v;               /** Vertex this edge points to.  Tail of prev and prev_constrained. */
-  bool triangle_to_be_removed = false; /** During hole shooting, we use this as a flag. */
-#ifndef NDEBUG
-  const int idx_;
-#endif
-public:
-  Edge(Edge *next_, Edge *prev_, Edge *opposite_, Vertex *v_, [[maybe_unused]] int idx)
+  unsigned working_set_depth = 0; /** The number of the working set this edge belongs to. */
+  bool triangle_marked = false; /** During hole shooting, we use this as a flag of whether this triangle's face belongs to the next working set. */
+
+  BaseEdge() {};
+  BaseEdge(Edge *next_, Edge *prev_, Edge *opposite_, Vertex *v_)
     : opposite(opposite_)
     , next(next_)
     , prev(prev_)
     , next_constrained(next_)
     , prev_constrained(prev_)
     , v(v_)
+  {}
+};
+class Edge : public BaseEdge {
+  using Base = BaseEdge;
+
+  friend class DECL;
+  friend std::ostream& operator<<(std::ostream&, const DECL&);
+
+#ifndef NDEBUG
+  const int idx_;
+#endif
+public:
+  Edge(Edge *next_, Edge *prev_, Edge *opposite_, Vertex *v_, [[maybe_unused]] int idx)
+    : Base(next_, prev_, opposite_, v_)
 #ifndef NDEBUG
     , idx_(idx)
 #endif
   {}
+  /* Only support setting state from Edges with the same idx. */
+  Edge& operator=(const Edge& o) noexcept {
+    assert(idx_ == o.idx_);
+    static_cast<Base&>(*this) = o;
+    return *this;
+  }
+
 #ifndef NDEBUG
   int idx() const { return idx_; };
 #else
@@ -129,6 +143,7 @@ public:
    */
   bool can_unconstrain() const {
     assert(is_constrained);
+    assert(opposite == NULL || working_set_depth == opposite->working_set_depth);
     return (opposite != NULL &&
       check_unconstrain_at_tip() &&
       opposite->check_unconstrain_at_tip());
@@ -180,6 +195,7 @@ public:
 
   friend std::ostream& operator<<(std::ostream&, const Edge&);
 };
+// }}}
 
 class DECL {
   /** Iterate around v once, returning a handle for each face.
@@ -189,6 +205,7 @@ class DECL {
    * However, if we hit the Convex Hull we restart at the initial vertex
    * and continue from there counter-clockwise.
    */
+  // {{{ Iterators
   class AroundVertexFacesIterator {
   protected:
     bool hit_ch_ = false;
@@ -281,116 +298,131 @@ class DECL {
     Edge * edge_after_ch() const { return edge_after_ch_; }
     Edge * edge_before_ch() const { return edge_before_ch_; }
   };
+  // }}}}}}
 
-  /** State of a region of the DECL.
-   *
-   * We store things in threes, so elements for triangle 0 are at pos 0, 1, 2,
-   * and for triangle n at pos 3n, 3n+1, 3n+2.
-   *
-   * edge 0 is opposite vertex 0.
-   *
-   * This is just like triangle handles things.
-   */
-  class SavedState {
+  class WorkingSet {
   public:
-    std::vector<Vertex*> triangle_vertices; /** For each triangle, the three vertices making up its boundary */
-    std::vector<int> buddy;                 /** For each triangle edge, the index of its buddy edge. */
-    std::vector<int> constraints;           /** For each triangle edge, if it is constrained, the index of the next and prev constrained edge.  -1 otherwise. */
-    int num_faces;
-    int num_vertices;
-    int num_vertices_on_boundary;
-    SavedState()
-      : num_faces(0)
-      , num_vertices(0)
-      , num_vertices_on_boundary(0)
-      { }
-    SavedState& operator= (const SavedState&) = default;
-    SavedState& operator= (SavedState&&) = default;
-    SavedState(SavedState&& o) = default;
-    SavedState(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& edge_pointers, int num_faces_, int num_vertices_, int num_vertices_on_boundary_);
-    SavedState(const FixedVector<Edge> &alledges, int num_faces_, int num_vertices_, int num_vertices_on_boundary_);
+    unsigned depth = 0; /** A recursion depth marker to match with each edge's working_set_depth */
+    std::vector<Edge*> my_edges; /** The list of edges we are working on right now, including the boundary edges */
+    std::vector<Edge*> shuffled_edges; /** The list of edges we are working on right now, excluding the boundary edges, in random order */
+    unsigned num_my_triangles; /** The number of triangles incident to my_edges.
+                                   This is identical to the number of faces when all
+                                   of my_edges are constrained.  Note that not all
+                                   these triangles need to be surrounded by my_edges;
+                                   other (constrained) edges can border them too. */
+    unsigned num_faces_mine_constrained; /** The number of faces, in the entire DECL, when all of my triangles are their own face.  */
+    WorkingSet() = default;
+
+    WorkingSet(const WorkingSet&) = delete;
+    WorkingSet(WorkingSet&&) noexcept = default;
+    WorkingSet& operator=(WorkingSet&&) noexcept = default;
+
+    WorkingSet(unsigned depth_, std::vector<Edge*>&& my_edges_, std::vector<Edge*>&& shuffled_edges_, int num_my_triangles_, int num_faces_mine_constrained_)
+      : depth(depth_)
+      , my_edges(std::move(my_edges_))
+      , shuffled_edges(std::move(shuffled_edges_))
+      , num_my_triangles(num_my_triangles_)
+      , num_faces_mine_constrained(num_faces_mine_constrained_)
+    {}
   };
-  #if 0
-  /** State of a region cut out from a DECL.
-   *
-   * the boundary vertices are in order, witnessed by edges on that boundary,
-   * except if we skipped over removed vertices that were on the CH.
-   *
-   * We can tell whether a vertex (witnessed by e) is such one by checking
-   * whether the previous vertex in the list is e's tail.
-   */
-  class SavedStateFromParent : public SavedState {
+
+  class SavedDecomposition {
+    public:
+    std::vector<Edge> edge_content; /** What was in the edges */
+    unsigned saved_num_faces; /** The number of faces of the entire graph with this edge_conent. */
+
+    SavedDecomposition(const SavedDecomposition*) = delete;
+    SavedDecomposition(const WorkingSet& ws, unsigned num_faces);
+  };
+
+
+  /* Helper functions */
+  private:
+    Edge *get_next_face_cw_around_vertex(Edge *e) const;
+    Edge *get_next_face_ccw(Edge *e) const;
+
+  /* Helper functions */
+  private:
+    /* setup */
+    static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
+    static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout);
+    static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate(VertexList& vertices);
+
+    /* Decomposition */
+    void unconstrain_random_edges();
+    void unconstrain_random_edges_initial_improvement();
+    void reinject_saved_decomposition(SavedDecomposition&& saved_state);
+
+  /* The state of the DECL */
+  private:
+    /* These stay fixed over all iterations.
+     *
+     * (not necessarily their content, but * at least the set and order) */
+    VertexList all_vertices; /** The list of all vertices. */
+
+    FixedVector<Edge> all_edges; /** The list of all edges */
+
+    WorkingSet working_set;
+    unsigned num_faces; /** The number of faces of the entire graph right now. */
+
+  /* The state of DECL hole finding */
+  private:
+    std::vector<Edge*> marked_halfedges;
+    std::vector<Edge*> marking_candidates;
+    unsigned num_marked_faces = 0;
+    unsigned num_marked_triangles = 0;
+
+  /* DECL hole finding functions and state mgmt */
+  private:
+    unsigned shoot_hole_mark_triangles_in_face(Edge * const e);
+    void shoot_hole_select_triangles(unsigned num_triangles);
+    std::vector<Edge*> shoot_hole_interior_edges() const;
+    void shoot_hole(unsigned size);
+    void shoot_holes();
+
+  private:
+    /* private constructor to make the public one use decl_triangulate's result. */
+    DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& triangulation_result);
+
+    /* optimization in punched hole */
+    void find_convex_decomposition_many(unsigned num_iterations);
+
+    std::geometric_distribution<unsigned> geometric_distribution;
+  /* public interface */
   public:
-    std::vector<Edge*> boundary_vertices;   /** List of boundary vertices, in order. */
-    std::vector<Edge*> edge_pointers;       /** Pointers into the parent's edge list of where things come from */
-    SavedStateFromParent(const FixedVector<Edge> &parentlist, const std::vector<Edge*>& edge_pointers,
-  };
-  #endif
+    const unsigned hole_size_base = 7;
+    const double hole_size_geometric_param = 0.4;
 
+    /** Initialize the DECL with the vertices and a triangulation of their CH */
+    DECL(VertexList&& vertices)
+    : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices)) {}
 
-private:
-  Edge *get_next_face_cw_around_vertex(Edge *e) const;
-  Edge *get_next_face_ccw(Edge *e) const;
+    void reset_constraints();
+    void find_convex_decomposition();
 
-private:
-  static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
-  void decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout);
-  void decl_triangulate(VertexList& vertices);
+    void write_obj_segments(bool dump_vertices, std::ostream &o) const;
+    unsigned get_num_faces() const { return num_faces; }
 
-  std::shared_ptr<VertexList> all_vertices; /* potentially more than this decl handles */
+    friend std::ostream& operator<<(std::ostream&, const DECL&);
 
-  FixedVector<Edge> edges;
-  int num_vertices;
-  int num_vertices_on_boundary;
-  int num_triangles;
-  int num_faces;
-
-private:
-  std::vector<Edge*> vertices_to_remove;
-  std::vector<Edge*> removal_boundary_vertices;
-  std::vector<Edge*> halfedges_to_remove;
-  int vertices_to_remove_on_ch = 0;
-  int faces_removed = 0;
-
-  void shoot_hole_select_vertices(unsigned size);
-  void shoot_hole_identify_affected_elements_around_vertex(Edge* const e_vertex);
-  void shoot_hole_list_triangles_in_face(Edge *e);
-  Edge* shoot_hole_identify_boundary_vertices_start();
-  bool shoot_hole_identify_boundary_vertices();
-  bool shoot_hole_identify_affected_elements();
-  void shoot_hole_inject_saved_state(const SavedState &state);
-  void shoot_hole(unsigned size, int num_iterations, int max_recurse);
-  void shoot_holes(int max_recurse);
-
+  // Debugging things:
+public:
 #ifndef NDEBUG
-  void assert_hole_shooting_vertices_clean() const {
-    #if 1
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_to_be_removed == false;} ) );
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_removal_boundary == false;} ) );
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_outer_removal_boundary == false;} ) );
-    #else
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_to_be_removed == false
-                                                                          && e.v->vertex_on_removal_boundary == false
-                                                                          && e.v->vertex_on_outer_removal_boundary == false;}) );
-    #endif
-  }
+  void assert_valid() const;
+#else
+  void assert_valid() const {}
+#endif
+
+private:
+#ifndef NDEBUG
   void assert_hole_shooting_reset() const {
-    #if 1
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false;}) );
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_to_be_removed == false;} ) );
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_removal_boundary == false;} ) );
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.v->vertex_on_outer_removal_boundary == false;} ) );
-    #else
-    assert( std::all_of(edges.begin(), edges.end(), [](const Edge& e){return e.triangle_to_be_removed == false
-                                                                          && e.v->vertex_to_be_removed == false
-                                                                          && e.v->vertex_on_removal_boundary == false
-                                                                          && e.v->vertex_on_outer_removal_boundary == false;}) );
-    #endif
-    assert(vertices_to_remove.size() == 0);
-    assert(removal_boundary_vertices.size() == 0);
-    assert(halfedges_to_remove.size() == 0);
-    assert(vertices_to_remove_on_ch == 0);
-    assert(faces_removed == 0);
+    assert( std::all_of(all_edges.begin(), all_edges.end(), [](const Edge& e){return e.triangle_marked == false;}) );
+    // assert( std::all_of(working_set.my_edges.begin(), working_set.my_edges.end(), [](const Edge* e){return e->triangle_marked == false;}) );
+
+    assert(marked_halfedges.size() == 0);
+    assert(marking_candidates.size() == 0);
+    assert(num_marked_faces == 0);
+    assert(num_marked_triangles == 0);
   }
   bool vertex_is_on_ch(Edge* e) const { /* expensive */
     auto it = AroundVertexFacesIterator(e);
@@ -401,33 +433,15 @@ private:
     assert(vertex_is_on_ch(e));
   }
 #else
-  void assert_hole_shooting_vertices_clean() const {}
   void assert_hole_shooting_reset() const {}
   void assert_vertex_is_on_ch(Edge *) const {}
 #endif
 
 
-public:
-  DECL(std::shared_ptr<VertexList> all_vertices);
-  DECL(std::shared_ptr<VertexList> all_vertices, const SavedState &state);
-
-  void find_convex_decomposition(int max_recurse=1);
-  SavedState find_convex_decomposition_many(int num_iterations, int num_faces_to_beat, int max_recurse);
-  void unconstrain_all();
-  void reset_constraints();
-
-#ifndef NDEBUG
-  void assert_valid() const;
-#else
-  void assert_valid() const {}
-#endif
-
-  void write_obj_segments(bool dump_vertices, std::ostream &o) const;
-  int get_num_faces() const { return num_faces; }
-
-  friend std::ostream& operator<<(std::ostream&, const DECL&);
 };
 
 std::ostream& operator<<(std::ostream&, const Vertex&);
 std::ostream& operator<<(std::ostream&, const Edge&);
 std::ostream& operator<<(std::ostream&, const DECL&);
+
+/* vim: set fdm=marker: */

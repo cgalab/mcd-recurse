@@ -12,7 +12,6 @@
 
 extern std::default_random_engine random_engine;
 
-
 /** Expands to a syntactically valid empty statement.  */
 #define STMT_NIL (void)0
 #define STMT_BEGIN do {
@@ -22,17 +21,25 @@ extern std::default_random_engine random_engine;
 #define DBG_GENERIC                       ( 1u << 0 )
 #define DBG_ITERATORS                     ( 1u << 1 )
 #define DBG_SHOOTHOLE                     ( 1u << 2 )
-#define DBG_STATESAVE                     ( 1u << 3 )
-#define DBG_STATERESTORE                  ( 1u << 4 )
+#define DBG_SHOOTHOLE2                    ( 1u << 3 )
+#define DBG_DECOMPOSITION_LOOP            ( 1u << 4 )
+#define DBG_UNCONSTRAIN                   ( 1u << 5 )
+// #define DBG_STATESAVE                     ( 1u << x )
+// #define DBG_STATERESTORE                  ( 1u << x )
 
 #define DEBUG_MASK (                  \
                 DBG_GENERIC                       | \
+                DBG_SHOOTHOLE                     | \
                 0 )
 /*
-                DBG_SHOOTHOLE                     | \
+                DBG_UNCONSTRAIN                   | \
+                DBG_SHOOTHOLE2                    | \
+                DBG_DECOMPOSITION_LOOP            | \
+
+                DBG_ITERATORS                     | \
+
                 DBG_STATESAVE                     | \
                 DBG_STATERESTORE                  | \
-                DBG_ITERATORS                     | \
 */
 
 #ifndef NDEBUG

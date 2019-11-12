@@ -126,8 +126,6 @@ int main(int argc, char *argv[]) {
   }
 
 
-  std::shared_ptr<std::vector<Vertex>> vertexlist = load_vertices(*in);
-
   auto start_time = std::chrono::system_clock::now();
   auto end_time = start_time + std::chrono::seconds(max_time);
 
@@ -143,7 +141,7 @@ int main(int argc, char *argv[]) {
   std::cout << "random_seed: " << seed << std::endl << std::flush;
   random_engine.seed(seed);
 
-  DECL decl(vertexlist);
+  DECL decl( load_vertices(*in) );
   while (1) {
     decl.assert_valid();
     decl.find_convex_decomposition();
@@ -173,9 +171,9 @@ int main(int argc, char *argv[]) {
       */
       break;
     };
-    decl.reset_constraints();
   }
 
+  DBG(DBG_GENERIC) << "Random seed was" << seed;
   if (best_num_faces > 0) {
     std::cout << "num_cvx_areas: " << best_num_faces << std::endl;
     std::cout << "num_iters: " << num_iters << std::endl;
