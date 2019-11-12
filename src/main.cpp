@@ -188,15 +188,19 @@ int main(int argc, char *argv[]) {
 
     if (UNLIKELY(this_num_faces <= lower_bound)) {
       LOG(INFO) << "We hit the lower bound of " << lower_bound;
+      std::cout << "exit_reason: lower_bound" << std::endl;
       break;
     } else if (UNLIKELY(have_solution && num_iters_since_improved >= improvement_runs)) {
       LOG(INFO) << "We ran for " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved.  We did improve on " << initial_to_beat << " faces by " << (initial_to_beat - this_num_faces);
+      std::cout << "exit_reason: found-after-improvement_runs" << std::endl;
       break;
     } else if (UNLIKELY(!have_solution && num_iters_since_improved >= improvement_runs_max)) {
       LOG(INFO) << "We ran for " << num_iters_since_improved << " without improving on " << initial_to_beat;
+      std::cout << "exit_reason: not-found-after-improvement_runs-max" << std::endl;
       break;
     } else if (UNLIKELY(max_time != 0 && now > end_time)) {
       LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " iterations total.)";
+      std::cout << "exit_reason: timeout" << std::endl;
       break;
     };
   }
