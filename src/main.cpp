@@ -36,6 +36,7 @@ usage(const char *progname, int err) {
     << "    --to-beat     TO_BEAT  return when a better answer is found" << std::endl
     << "    --lower-bound NUM      return immediately when this is reached" << std::endl
     << "    --improve RUNS         Do at least RUNS runs/attempts at solving this and improving it *after* beating TO_BEAT" << std::endl
+    << "    --improve-max RUNS     Try at most RUNS runs/attempts at solving this before beating TO_BEAT" << std::endl
     << "    --max-time NUM         Do not start a new run after NUM seconds (overrides min-runs)" << std::endl
     << "    --log-interval SECONDS Report on state regularly." << std::endl
   ;
@@ -43,7 +44,7 @@ usage(const char *progname, int err) {
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:fb:B:I:T:L:";
+  const char * const short_options = "hS:fb:B:I:T:L:M:";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
@@ -51,6 +52,7 @@ int main(int argc, char *argv[]) {
     { "to-beat"     , required_argument, 0, 'b'},
     { "lower-bound" , required_argument, 0, 'B'},
     { "improve"     , required_argument, 0, 'I'},
+    { "improve-max" , required_argument, 0, 'M'},
     { "max-time"    , required_argument, 0, 'T'},
     { "log-interval", required_argument, 0, 'L'},
     { 0, 0, 0, 0}
@@ -63,6 +65,7 @@ int main(int argc, char *argv[]) {
   unsigned initial_to_beat = 0;
   unsigned lower_bound = 0;
   unsigned improvement_runs = 10;
+  unsigned improvement_runs_max = 100000;
   unsigned log_interval = 60;
   int max_time = 0;
 
@@ -94,6 +97,10 @@ int main(int argc, char *argv[]) {
 
       case 'I':
         improvement_runs = atol(optarg);
+        break;
+
+      case 'M':
+        improvement_runs_max = atol(optarg);
         break;
 
       case 'T':
@@ -184,6 +191,9 @@ int main(int argc, char *argv[]) {
       break;
     } else if (UNLIKELY(have_solution && num_iters_since_improved >= improvement_runs)) {
       LOG(INFO) << "We ran for " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved.  We did improve on " << initial_to_beat << " faces by " << (initial_to_beat - this_num_faces);
+      break;
+    } else if (UNLIKELY(!have_solution && num_iters_since_improved >= improvement_runs_max)) {
+      LOG(INFO) << "We ran for " << num_iters_since_improved << " without improving on " << initial_to_beat;
       break;
     } else if (UNLIKELY(max_time != 0 && now > end_time)) {
       LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " total.)";
