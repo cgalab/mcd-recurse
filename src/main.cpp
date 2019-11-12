@@ -204,6 +204,8 @@ int main(int argc, char *argv[]) {
   DBG(DBG_GENERIC) << "Random seed was" << seed;
   std::cout << "num_cvx_areas: " << decl.get_num_faces() << std::endl;
   std::cout << "num_iters: " << num_iters << std::endl;
+  auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time);
+  std::cout << "run_time: " << milliseconds.count()/1000. << std::endl;
   decl.write_obj_segments(full_obj, *out);
   return 0;
 }
