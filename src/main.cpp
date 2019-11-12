@@ -13,7 +13,6 @@ unsigned DBG_INDENT_CTR = 0;
 std::default_random_engine random_engine;
 
 /*seconds*/
-#define LOG_INTERVAL 60
 
 static void
 setup_logging(int argc, char* argv[]) {
@@ -32,26 +31,28 @@ usage(const char *progname, int err) {
 
   f << "Usage: " << progname << "[options] <INPUT> <OUTPUT>" << std::endl
     << "  Options" << std::endl
-    << "    --seed NUM          seed of the RNG" << std::endl
-    << "    --full-obj          also print vertex coordinates to .obj file" << std::endl
-    << "    --to-beat     NUM   return when a better answer is found" << std::endl
-    << "    --lower-bound NUM   return immediately when this is reached" << std::endl
-    << "    --min-runs NUM      Do at least NUM runs/attempts at solving this" << std::endl
-    << "    --max-time NUM      Do not start a new run after NUM seconds (overrides min-runs)" << std::endl
+    << "    --seed NUM             seed of the RNG" << std::endl
+    << "    --full-obj             also print vertex coordinates to .obj file" << std::endl
+    << "    --to-beat     TO_BEAT  return when a better answer is found" << std::endl
+    << "    --lower-bound NUM      return immediately when this is reached" << std::endl
+    << "    --improve RUNS         Do at least RUNS runs/attempts at solving this and improving it *after* beating TO_BEAT" << std::endl
+    << "    --max-time NUM         Do not start a new run after NUM seconds (overrides min-runs)" << std::endl
+    << "    --log-interval SECONDS Report on state regularly." << std::endl
   ;
   exit(err);
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:fb:B:M:T:";
+  const char * const short_options = "hS:fb:B:I:T:L:";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
     { "full-obj"    , no_argument      , 0, 'f'},
     { "to-beat"     , required_argument, 0, 'b'},
     { "lower-bound" , required_argument, 0, 'B'},
-    { "min-runs"    , required_argument, 0, 'M'},
+    { "improve"     , required_argument, 0, 'I'},
     { "max-time"    , required_argument, 0, 'T'},
+    { "log-interval", required_argument, 0, 'L'},
     { 0, 0, 0, 0}
   };
 
@@ -59,9 +60,10 @@ int main(int argc, char *argv[]) {
 
   long requested_seed = 0;
   bool full_obj = false;
-  int to_beat = 0;
-  int lower_bound = 0;
-  int min_runs = 10;
+  unsigned initial_to_beat = 0;
+  unsigned lower_bound = 0;
+  unsigned improvement_runs = 10;
+  unsigned log_interval = 60;
   int max_time = 0;
 
   while (1) {
@@ -83,19 +85,23 @@ int main(int argc, char *argv[]) {
         break;
 
       case 'b':
-        to_beat = atol(optarg);
+        initial_to_beat = atol(optarg);
         break;
 
       case 'B':
         lower_bound = atol(optarg);
         break;
 
-      case 'M':
-        min_runs = atol(optarg);
+      case 'I':
+        improvement_runs = atol(optarg);
         break;
 
       case 'T':
         max_time = atol(optarg);
+        break;
+
+      case 'L':
+        log_interval = atol(optarg);
         break;
 
       default:
@@ -132,12 +138,11 @@ int main(int argc, char *argv[]) {
   auto start_time = std::chrono::system_clock::now();
   auto end_time = start_time + std::chrono::seconds(max_time);
   auto last_info_time = std::chrono::system_clock::now();
-  auto info_interval = std::chrono::seconds(LOG_INTERVAL);
+  auto info_interval = std::chrono::seconds(log_interval);
 
-  int num_iters = 0;
+  unsigned num_iters = 0;
+  unsigned num_iters_since_improved = 0;
   int best_seed = 0;
-  int best_num_faces = to_beat;
-  std::stringstream obj_content;
 
   bool have_solution = false;
   std::random_device real_rng("/dev/urandom");
@@ -147,49 +152,48 @@ int main(int argc, char *argv[]) {
   random_engine.seed(seed);
 
   DECL decl( load_vertices(*in) );
+  initial_to_beat = initial_to_beat ? initial_to_beat : decl.get_num_faces();
+  unsigned to_beat = initial_to_beat;
   while (1) {
     decl.assert_valid();
     decl.find_convex_decomposition();
     decl.assert_valid();
 
     ++num_iters;
+    ++num_iters_since_improved;
 
     auto now = std::chrono::system_clock::now();
-    int this_num_faces = decl.get_num_faces();
+    unsigned this_num_faces = decl.get_num_faces();
     if (now > last_info_time + info_interval) {
-      LOG(INFO) << "Iter " << num_iters << "/" << min_runs << "; This num faces " << this_num_faces;
+      if (have_solution) {
+        LOG(INFO) << "Iter " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved; This num faces " << this_num_faces;
+      } else {
+        LOG(INFO) << "Iter " << num_iters << " overall; This num faces " << this_num_faces << "; to beat: " << to_beat;
+      }
       last_info_time = now;
     }
 
-    if (this_num_faces < best_num_faces || best_num_faces == 0) {
+    if (this_num_faces < to_beat) {
       have_solution = true;
-
-      best_num_faces = this_num_faces;
-      std::stringstream().swap(obj_content); // clear obj_content
-      decl.write_obj_segments(full_obj, obj_content);
+      num_iters_since_improved = 0;
+      to_beat = this_num_faces;
     }
 
-    if ( (this_num_faces <= lower_bound)
-      || (have_solution && num_iters >= min_runs)
-      || (max_time != 0 && now > end_time)
-      ) {
-      /*
-      std::cerr << "a: " << (this_num_faces <= lower_bound) << std::endl;
-      std::cerr << "b: " << (have_solution && num_iters >= min_runs) << std::endl;
-      std::cerr << "c: " << (max_time != 0 && now > end_time) << std::endl;
-      */
+    if (UNLIKELY(this_num_faces <= lower_bound)) {
+      LOG(INFO) << "We hit the lower bound of " << lower_bound;
+      break;
+    } else if (UNLIKELY(have_solution && num_iters_since_improved >= improvement_runs)) {
+      LOG(INFO) << "We ran for " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved.  We did improve on " << initial_to_beat << " faces by " << (initial_to_beat - this_num_faces);
+      break;
+    } else if (UNLIKELY(max_time != 0 && now > end_time)) {
+      LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " total.)";
       break;
     };
   }
 
   DBG(DBG_GENERIC) << "Random seed was" << seed;
-  if (best_num_faces > 0) {
-    std::cout << "num_cvx_areas: " << best_num_faces << std::endl;
-    std::cout << "num_iters: " << num_iters << std::endl;
-    *out << obj_content.rdbuf();
-    return 0;
-  } else {
-    std::cerr << "No decomposition found." << std::endl;
-    return 1;
-  }
+  std::cout << "num_cvx_areas: " << decl.get_num_faces() << std::endl;
+  std::cout << "num_iters: " << num_iters << std::endl;
+  decl.write_obj_segments(full_obj, *out);
+  return 0;
 }
