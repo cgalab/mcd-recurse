@@ -197,7 +197,9 @@ public:
 
   /** Flip this triangulation edge.
    *
-   * Note that this assumes all is still contrained.
+   * Note that this only works on triangulation edges and completely
+   * ignores next/prev constrained pointers.  Those are assumed to
+   * be fixed with reset_all_constraints() soon.
    */
   void flip() {
     assert(can_flip());
@@ -205,19 +207,9 @@ public:
 
     const auto triangle = [](Edge* a, Edge *b, Edge *c) {
       const auto link_edges = [](Edge* first, Edge *second) {
-        first->next = first->next_constrained = second;
-        second->prev = second->prev_constrained = first;
+        first->next = second;
+        second->prev = first;
       };
-      assert(a->is_constrained);
-      assert(b->is_constrained);
-      assert(c->is_constrained);
-      assert(a->next == a->next_constrained);
-      assert(b->next == b->next_constrained);
-      assert(c->next == c->next_constrained);
-      assert(a->prev == a->prev_constrained);
-      assert(b->prev == b->prev_constrained);
-      assert(c->prev == c->prev_constrained);
-
       link_edges(a, b);
       link_edges(b, c);
       link_edges(c, a);
@@ -414,7 +406,7 @@ class DECL {
     static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate(VertexList& vertices);
 
     /* Decomposition */
-    void flip_random_edges();
+    void flip_random_edges_and_reset_constraints();
     void unconstrain_random_edges();
     void unconstrain_random_edges_initial_improvement();
     void reinject_saved_decomposition(SavedDecomposition&& saved_state);

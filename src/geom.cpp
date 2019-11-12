@@ -166,10 +166,12 @@ decl_triangulate(VertexList& vertices) {
 }
 
 
-/** Flip edges randomly. */
+/** Flip edges randomly.
+ *
+ * Then, reset all constraints as flipping invalidates the next/prev_constraint pointers. */
 void
 DECL::
-flip_random_edges() {
+flip_random_edges_and_reset_constraints() {
   DBG_FUNC_BEGIN(DBG_FLIP);
 
   std::uniform_int_distribution<unsigned> uniform_distribution(0, working_set.shuffled_edges.size() - 1);
@@ -185,6 +187,10 @@ flip_random_edges() {
     ++num_flipped;
   }
   DBG(DBG_FLIP) << "Flipped " << num_flipped << "/" << num_flips;
+
+  /* We did not bother updating the next/prev_constrained during flipping. */
+  reset_constraints();
+
   DBG_FUNC_END(DBG_FLIP);
 }
 
@@ -487,10 +493,9 @@ find_convex_decomposition_many(unsigned num_iterations) {
   SavedDecomposition best = SavedDecomposition(working_set, num_faces);
   for (unsigned iter = 0; iter < num_iterations; ++iter) {
     DBG(DBG_DECOMPOSITION_LOOP) << "Resetting constraints";
-    reset_constraints();
 
     assert_valid();
-    flip_random_edges();
+    flip_random_edges_and_reset_constraints();
     unconstrain_random_edges();
 
     current_is_best = (num_faces < num_faces_to_beat);
@@ -528,7 +533,9 @@ find_convex_decomposition_many(unsigned num_iterations) {
     reinject_saved_decomposition(std::move(best));
   } else {
     DBG(DBG_DECOMPOSITION_LOOP) << "Keeping currently best known decomposition with " << num_faces << " faces.";
-    // LOG(INFO) << "Keeping currently best known decomposition with " << num_faces << " faces."; /* We like this during poor man's timing tests. */
+    #if 0
+    LOG(INFO) << "Keeping currently best known decomposition with " << num_faces << " faces."; /* We like this during poor man's timing tests. */
+    #endif
   }
   assert_valid();
   assert_hole_shooting_reset();
@@ -550,7 +557,7 @@ find_convex_decomposition() {
 
   assert_valid();
   if (working_set.num_my_triangles == num_faces) {
-    flip_random_edges();
+    flip_random_edges_and_reset_constraints();
     unconstrain_random_edges();
   };
   assert_valid();
