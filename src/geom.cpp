@@ -2,7 +2,8 @@
 #include "triangle.h"
 
 #include <numeric>
-#include <cmath> 
+#include <cmath>
+#include <iomanip>
 
 #define NUMBER_OF_HOLE_PUNCHES_SCALE 10
 
@@ -46,6 +47,9 @@ DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& t
   : all_vertices(std::move(vertices))
   , all_edges(std::move(triangulation_result.first))
 {
+  geometric_distribution = std::geometric_distribution<unsigned>(hole_size_geometric_param);
+  std::cout << "hole_size: " << hole_size_base << "+P_geom(i|" << hole_size_geometric_param << ")" << std::endl;
+
   working_set.shuffled_edges = std::move(triangulation_result.second);
 
   unsigned number_of_ch_vertices = all_edges.size() - working_set.shuffled_edges.size();
@@ -166,7 +170,7 @@ decl_triangulate(VertexList& vertices) {
 /** unconstrain all edges for which this is possible. */
 void
 DECL::
-unconstrain_all() {
+unconstrain_random_edges() {
   DBG_FUNC_BEGIN(DBG_UNCONSTRAIN);
   std::shuffle(std::begin(working_set.shuffled_edges), std::end(working_set.shuffled_edges), random_engine);
 
@@ -181,6 +185,23 @@ unconstrain_all() {
     --num_faces;
   }
   DBG(DBG_UNCONSTRAIN) << "Now have " << num_faces << "/" << old_num_faces << " faces";
+  DBG_FUNC_END(DBG_UNCONSTRAIN);
+}
+
+/** Just like unconstrain_random_edges(), except that some edges may already be unconstrained. */
+void
+DECL::
+unconstrain_random_edges_initial_improvement() {
+  DBG_FUNC_BEGIN(DBG_UNCONSTRAIN);
+  std::vector<Edge*> unconstrained_edges;
+  unconstrained_edges.reserve(working_set.shuffled_edges.size());
+
+  std::copy_if(std::begin(working_set.shuffled_edges), std::end(working_set.shuffled_edges), std::back_inserter(unconstrained_edges), [](Edge *e){return e->is_constrained;} );
+  std::swap(working_set.shuffled_edges, unconstrained_edges);
+
+  unconstrain_random_edges();
+
+  std::swap(working_set.shuffled_edges, unconstrained_edges);
   DBG_FUNC_END(DBG_UNCONSTRAIN);
 }
 
@@ -333,11 +354,6 @@ shoot_hole_select_triangles(unsigned select_num_faces) {
   DBG_FUNC_BEGIN(DBG_SHOOTHOLE2);
   assert_hole_shooting_reset();
 
-  //marking_candidates.reserve(2*num_triangles);
-  //marked_halfedges.reserve(4*num_triangles);
-    /* Slightly larger than just 3*num_triangles since might need the extra bit when
-     * finishing up a face.
-     */
   Edge* random_edge = *random_element(std::begin(working_set.my_edges), std::end(working_set.my_edges), random_engine);
   marking_candidates.emplace_back(random_edge);
 
@@ -392,17 +408,6 @@ shoot_hole(unsigned select_num_faces) {
   DBG_INDENT_INC();
 
   shoot_hole_select_triangles(select_num_faces);
-  #if 0
-  if (num_marked_faces <= 2) {
-    DBG(DBG_SHOOTHOLE) << "No point in looking at hole with <=2 faces.";
-
-    for (auto& e : marked_halfedges) e->triangle_marked = false;
-    marked_halfedges.clear();
-    num_marked_triangles = 0;
-    num_marked_faces = 0;
-  } else {
-  //}
-  #endif
 
   std::vector<Edge *> interior_edges = shoot_hole_interior_edges();
 
@@ -437,14 +442,11 @@ void
 DECL::
 shoot_holes() {
   DBG_INDENT_INC();
-
-  static std::geometric_distribution<unsigned> distribution = std::geometric_distribution<unsigned>(0.4);
   unsigned number_of_hole_punches = num_faces;
 
-  DBG(DBG_SHOOTHOLE)
-    << "Calling shoot_hole " << number_of_hole_punches << " times";
+  DBG(DBG_SHOOTHOLE) << "Calling shoot_hole " << number_of_hole_punches << " times";
   for (unsigned i=0; i<number_of_hole_punches; ++i) {
-    unsigned hole_size = 7 + distribution(random_engine);
+    unsigned hole_size = hole_size_base + geometric_distribution(random_engine);
     DBG(DBG_SHOOTHOLE2) << "  Number of faces: " << hole_size;
     shoot_hole(hole_size);
     assert_hole_shooting_reset();
@@ -468,7 +470,7 @@ find_convex_decomposition_many(unsigned num_iterations) {
     reset_constraints();
 
     assert_valid();
-    unconstrain_all();
+    unconstrain_random_edges();
 
     current_is_best = (num_faces < num_faces_to_beat);
     if (current_is_best) {
@@ -483,15 +485,16 @@ find_convex_decomposition_many(unsigned num_iterations) {
   }
 
   if (have_solution) {
-    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  Best now is " << num_faces_to_beat << " from " << initial_num_faces_to_beat
+    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  Best now is  " << num_faces_to_beat << " from " << initial_num_faces_to_beat
+      << " (" << std::setw(3) << (initial_num_faces_to_beat-num_faces_to_beat) << ")"
       << "; found in iteration (#/max/#triangles): "
       << solution_from_iter
       << ", " << num_iterations
       << ", " << working_set.shuffled_edges.size()
       ;
   } else {
-    //DBG(              DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  We failed to improve on the bound of " << num_faces_to_beat << " faces";
-    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  No new best:" << num_faces_to_beat << " from " << initial_num_faces_to_beat
+    DBG(DBG_GENERIC | DBG_DECOMPOSITION_LOOP) << "Done " << num_iterations << " iterations.  No new best: " << num_faces_to_beat << " from " << initial_num_faces_to_beat
+      << " (  -)"
       << "; found in iteration (#/max/#triangles): "
       << solution_from_iter
       << ", " << num_iterations
@@ -509,16 +512,22 @@ find_convex_decomposition_many(unsigned num_iterations) {
   DBG_FUNC_END(DBG_DECOMPOSITION_LOOP);
 }
 
+/** Finds an initial, or improves an existing convex decomposition.
+ *
+ * First we unconstrain all possible in a random way, then we try to improve locally.
+ *
+ * To restart the process, run reset_constraints().
+ */
 void
 DECL::
 find_convex_decomposition() {
   DBG_FUNC_BEGIN(DBG_DECOMPOSITION_LOOP);
 
   assert_valid();
-  if (working_set.num_my_triangles != num_faces) {
-    reset_constraints();
-  }
-  unconstrain_all();
+  if (working_set.num_my_triangles == num_faces) {
+    unconstrain_random_edges();
+  };
+  assert_valid();
   shoot_holes();
 
   assert_valid();

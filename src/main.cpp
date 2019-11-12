@@ -171,7 +171,6 @@ int main(int argc, char *argv[]) {
       */
       break;
     };
-    decl.reset_constraints();
   }
 
   DBG(DBG_GENERIC) << "Random seed was" << seed;

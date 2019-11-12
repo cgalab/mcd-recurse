@@ -326,23 +326,6 @@ class DECL {
     {}
   };
 
-  #if 0
-    //WorkingSet() = default;
-    // WorkingSet() = default;
-    // WorkingSet(const WorkingSet&) = default;
-    //SavedState(std::vector<Edge*>&& my_edges, int num_my_triangles, int num_faces_mine_constrained, int num_faces);
-  class EdgeState {
-    RelevantState(std::vector<Edge*>&& my_edges_, int num_my_triangles_, int num_faces_mine_constrained_, int num_faces_)
-      : my_edges(std::forward< std::vector<Edge*> >(my_edges_))
-      , num_my_triangles(num_my_triangles_)
-      , num_faces_mine_constrained(num_faces_mine_constrained_)
-      , num_faces(num_faces_)
-    {}
-    // RelevantState(RelevantState&& o) noexcept = default;
-    RelevantState& operator=(RelevantState&&) noexcept = default;
-  };
-  #endif
-
   class SavedDecomposition {
     public:
     std::vector<Edge> edge_content; /** What was in the edges */
@@ -350,12 +333,6 @@ class DECL {
 
     SavedDecomposition(const SavedDecomposition*) = delete;
     SavedDecomposition(const WorkingSet& ws, unsigned num_faces);
-
-    //SavedState(const RelevantState& state);
-    //SavedState& operator= (const SavedState&) = default;
-    //SavedState& operator= (SavedState&&) = default;
-    //SavedState(SavedState&& o) = default;
-    //SavedState(std::vector<Edge*>& edge_ptrs_);
   };
 
 
@@ -372,7 +349,8 @@ class DECL {
     static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate(VertexList& vertices);
 
     /* Decomposition */
-    void unconstrain_all();
+    void unconstrain_random_edges();
+    void unconstrain_random_edges_initial_improvement();
     void reinject_saved_decomposition(SavedDecomposition&& saved_state);
 
   /* The state of the DECL */
@@ -409,8 +387,12 @@ class DECL {
     /* optimization in punched hole */
     void find_convex_decomposition_many(unsigned num_iterations);
 
+    std::geometric_distribution<unsigned> geometric_distribution;
   /* public interface */
   public:
+    const unsigned hole_size_base = 7;
+    const double hole_size_geometric_param = 0.4;
+
     /** Initialize the DECL with the vertices and a triangulation of their CH */
     DECL(VertexList&& vertices)
     : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices)) {}
