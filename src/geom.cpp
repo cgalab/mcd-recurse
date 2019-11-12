@@ -47,6 +47,7 @@ DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& t
 {
   geometric_distribution = std::geometric_distribution<unsigned>(hole_size_geometric_param);
   std::cout << "hole_size: " << hole_size_base << "+P_geom(i|" << hole_size_geometric_param << ")" << std::endl;
+  std::cout << "flip_nums_exponent: " << flip_nums_exponent << std::endl;
 
   working_set.shuffled_edges = std::move(triangulation_result.second);
 
@@ -165,7 +166,28 @@ decl_triangulate(VertexList& vertices) {
 }
 
 
-/** unconstrain all edges for which this is possible. */
+/** Flip edges randomly. */
+void
+DECL::
+flip_random_edges() {
+  DBG_FUNC_BEGIN(DBG_FLIP);
+
+  std::uniform_int_distribution<unsigned> uniform_distribution(0, working_set.shuffled_edges.size() - 1);
+  unsigned num_flips = std::pow(working_set.num_my_triangles, flip_nums_exponent);
+  unsigned num_flipped = 0;
+
+  for (unsigned i=0; i<num_flips; ++i) {
+    unsigned edge_idx = uniform_distribution(random_engine);
+    Edge* e = working_set.shuffled_edges[edge_idx];
+
+    if (! e->can_flip()) continue;
+    e->flip();
+    ++num_flipped;
+  }
+  DBG(DBG_FLIP) << "Flipped " << num_flipped << "/" << num_flips;
+  DBG_FUNC_END(DBG_FLIP);
+}
+
 void
 DECL::
 unconstrain_random_edges() {
@@ -468,6 +490,7 @@ find_convex_decomposition_many(unsigned num_iterations) {
     reset_constraints();
 
     assert_valid();
+    flip_random_edges();
     unconstrain_random_edges();
 
     current_is_best = (num_faces < num_faces_to_beat);
@@ -527,6 +550,7 @@ find_convex_decomposition() {
 
   assert_valid();
   if (working_set.num_my_triangles == num_faces) {
+    flip_random_edges();
     unconstrain_random_edges();
   };
   assert_valid();

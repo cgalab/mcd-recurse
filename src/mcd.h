@@ -24,6 +24,7 @@ extern std::default_random_engine random_engine;
 #define DBG_SHOOTHOLE2                    ( 1u << 3 )
 #define DBG_DECOMPOSITION_LOOP            ( 1u << 4 )
 #define DBG_UNCONSTRAIN                   ( 1u << 5 )
+#define DBG_FLIP                          ( 1u << 6 )
 // #define DBG_STATESAVE                     ( 1u << x )
 // #define DBG_STATERESTORE                  ( 1u << x )
 
@@ -32,6 +33,7 @@ extern std::default_random_engine random_engine;
                 DBG_SHOOTHOLE                     | \
                 0 )
 /*
+                DBG_FLIP                          | \
                 DBG_UNCONSTRAIN                   | \
                 DBG_SHOOTHOLE2                    | \
                 DBG_DECOMPOSITION_LOOP            | \

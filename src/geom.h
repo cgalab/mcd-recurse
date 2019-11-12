@@ -149,8 +149,6 @@ public:
       opposite->check_unconstrain_at_tip());
   }
 
-  Vertex* get_tail() const { return prev->v; }
-
   /** Mark this edge as not a constrained edge.
    *
    * Upd/It
@@ -175,6 +173,73 @@ public:
 
     assert_valid();
   }
+
+  /** Check whether this edge can be flipped.
+   *
+   * It assumes the graph is triangulated and everything is still constrained. */
+  bool can_flip() const {
+    if (opposite == NULL) return false;
+
+    assert(working_set_depth == opposite->working_set_depth);
+
+    const Vertex &tip = *v;
+    const Vertex &tail = *opposite->v;
+    const Vertex &left = *next->v;
+    const Vertex &right = *opposite->next->v;
+
+    assert(&left != &right);
+    assert(Vertex::orientation(tail, tip, left) > 0);
+    assert(Vertex::orientation(tip, tail, right) > 0);
+
+    return ((Vertex::orientation(right, left, tail) > 0) &&
+            (Vertex::orientation(left, right, tip) > 0));
+  }
+
+  /** Flip this triangulation edge.
+   *
+   * Note that this assumes all is still contrained.
+   */
+  void flip() {
+    assert(can_flip());
+    assert_valid();
+
+    const auto triangle = [](Edge* a, Edge *b, Edge *c) {
+      const auto link_edges = [](Edge* first, Edge *second) {
+        first->next = first->next_constrained = second;
+        second->prev = second->prev_constrained = first;
+      };
+      assert(a->is_constrained);
+      assert(b->is_constrained);
+      assert(c->is_constrained);
+      assert(a->next == a->next_constrained);
+      assert(b->next == b->next_constrained);
+      assert(c->next == c->next_constrained);
+      assert(a->prev == a->prev_constrained);
+      assert(b->prev == b->prev_constrained);
+      assert(c->prev == c->prev_constrained);
+
+      link_edges(a, b);
+      link_edges(b, c);
+      link_edges(c, a);
+    };
+
+    Edge * l = this;     /* This edge points upwards */
+    Edge * r = opposite; /* Our buddy is to our right, pointing downwards */
+    Edge * tl = l->next; /* top left */
+    Edge * bl = l->prev; /* bottom left */
+    Edge * tr = r->prev; /* top right */
+    Edge * br = r->next; /* bottom right */
+
+    /* After the flip, this edge points from right to left and is "below" our buddy which points from left to right */
+    l->v = tl->v;
+    r->v = br->v;
+    triangle(l, bl, br);
+    triangle(r, tr, tl);
+
+    assert_valid();
+  }
+
+  Vertex* get_tail() const { return prev->v; }
 
   /** This is run during DECL reset which will mark all edges as constrained.
    *
@@ -349,6 +414,7 @@ class DECL {
     static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate(VertexList& vertices);
 
     /* Decomposition */
+    void flip_random_edges();
     void unconstrain_random_edges();
     void unconstrain_random_edges_initial_improvement();
     void reinject_saved_decomposition(SavedDecomposition&& saved_state);
@@ -392,6 +458,7 @@ class DECL {
   public:
     const unsigned hole_size_base = 7;
     const double hole_size_geometric_param = 0.4;
+    const double flip_nums_exponent = 1./5;
 
     /** Initialize the DECL with the vertices and a triangulation of their CH */
     DECL(VertexList&& vertices)
