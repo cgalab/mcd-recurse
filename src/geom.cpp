@@ -499,10 +499,14 @@ find_convex_decomposition_many(unsigned num_iterations) {
       << ", " << working_set.shuffled_edges.size()
       ;
   };
-  if (!current_is_best) {
-    DBG(DBG_DECOMPOSITION_LOOP) << "Re-injecting saved decomposition with " << best.saved_num_faces << " faces";
+  /** We keep the current decomposition and triangulation if it is at least as good as the one before.  We do not require it be better. */
+  if (num_faces > num_faces_to_beat) {
+    DBG(DBG_DECOMPOSITION_LOOP) << "Re-injecting saved decomposition with " << best.saved_num_faces << " faces because we have " << num_faces << " right now.";
     reinject_saved_decomposition(std::move(best));
-  };
+  } else {
+    DBG(DBG_DECOMPOSITION_LOOP) << "Keeping currently best known decomposition with " << num_faces << " faces.";
+    // LOG(INFO) << "Keeping currently best known decomposition with " << num_faces << " faces."; /* We like this during poor man's timing tests. */
+  }
   assert_valid();
   assert_hole_shooting_reset();
   assert(num_faces_to_beat == num_faces);
