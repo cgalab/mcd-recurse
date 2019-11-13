@@ -190,6 +190,7 @@ flip_random_edges_and_reset_constraints() {
 
   /* We did not bother updating the next/prev_constrained during flipping. */
   reset_constraints();
+  assert_valid();
 
   DBG_FUNC_END(DBG_FLIP);
 }

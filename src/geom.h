@@ -200,11 +200,11 @@ public:
    * Note that this only works on triangulation edges and completely
    * ignores next/prev constrained pointers.  Those are assumed to
    * be fixed with reset_all_constraints() soon.
+   *
+   * As such, assert_valid() will fail until reset_all_constraints() is run.
    */
   void flip() {
     assert(can_flip());
-    assert_valid();
-
     const auto triangle = [](Edge* a, Edge *b, Edge *c) {
       const auto link_edges = [](Edge* first, Edge *second) {
         first->next = second;
@@ -227,8 +227,6 @@ public:
     r->v = br->v;
     triangle(l, bl, br);
     triangle(r, tr, tl);
-
-    assert_valid();
   }
 
   Vertex* get_tail() const { return prev->v; }
