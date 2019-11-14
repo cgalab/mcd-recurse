@@ -36,15 +36,16 @@ usage(const char *progname, int err) {
     << "    --to-beat     TO_BEAT  return when a better answer is found" << std::endl
     << "    --lower-bound NUM      return immediately when this is reached" << std::endl
     << "    --improve RUNS         Do at least RUNS runs/attempts at solving this and improving it *after* beating TO_BEAT" << std::endl
+    << "    --improve-time SECONDS After beating TO_BEAT, work on it for at least this long" << std::endl
     << "    --improve-max RUNS     Try at most RUNS runs/attempts at solving this before beating TO_BEAT" << std::endl
-    << "    --max-time NUM         Do not start a new run after NUM seconds (overrides min-runs)" << std::endl
+    << "    --max-time NUM         Do not start a new run after NUM seconds (overrides improve-* bounds)" << std::endl
     << "    --log-interval SECONDS Report on state regularly." << std::endl
   ;
   exit(err);
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:fb:B:I:T:L:M:";
+  const char * const short_options = "hS:fb:B:I:i:T:L:M:";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
@@ -52,6 +53,7 @@ int main(int argc, char *argv[]) {
     { "to-beat"     , required_argument, 0, 'b'},
     { "lower-bound" , required_argument, 0, 'B'},
     { "improve"     , required_argument, 0, 'I'},
+    { "improve-time", required_argument, 0, 'i'},
     { "improve-max" , required_argument, 0, 'M'},
     { "max-time"    , required_argument, 0, 'T'},
     { "log-interval", required_argument, 0, 'L'},
@@ -65,6 +67,7 @@ int main(int argc, char *argv[]) {
   unsigned initial_to_beat = 0;
   unsigned lower_bound = 0;
   unsigned improvement_runs = 10;
+  unsigned improvement_time = 0;
   unsigned improvement_runs_max = 100000;
   unsigned log_interval = 60;
   int max_time = 0;
@@ -97,6 +100,10 @@ int main(int argc, char *argv[]) {
 
       case 'I':
         improvement_runs = atol(optarg);
+        break;
+
+      case 'i':
+        improvement_time = atol(optarg);
         break;
 
       case 'M':
@@ -146,6 +153,7 @@ int main(int argc, char *argv[]) {
   auto end_time = start_time + std::chrono::seconds(max_time);
   auto last_info_time = std::chrono::system_clock::now();
   auto info_interval = std::chrono::seconds(log_interval);
+  std::chrono::time_point<std::chrono::system_clock> solution_found_at;
 
   unsigned num_iters = 0;
   unsigned num_iters_since_improved = 0;
@@ -183,6 +191,7 @@ int main(int argc, char *argv[]) {
     if (this_num_faces < to_beat) {
       have_solution = true;
       num_iters_since_improved = 0;
+      solution_found_at = now;
       to_beat = this_num_faces;
     }
 
@@ -190,9 +199,11 @@ int main(int argc, char *argv[]) {
       LOG(INFO) << "We hit the lower bound of " << lower_bound;
       std::cout << "exit_reason: lower_bound" << std::endl;
       break;
-    } else if (UNLIKELY(have_solution && num_iters_since_improved >= improvement_runs)) {
+    } else if (UNLIKELY(have_solution && (num_iters_since_improved >= improvement_runs) && (now > solution_found_at + std::chrono::seconds(improvement_time)))) {
       LOG(INFO) << "We ran for " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved.  We did improve on " << initial_to_beat << " faces by " << (initial_to_beat - this_num_faces);
       std::cout << "exit_reason: found-after-improvement_runs" << std::endl;
+      std::cout << "improvement_runs: " << improvement_runs << std::endl;
+      std::cout << "improvement_time: " << improvement_time << std::endl;
       break;
     } else if (UNLIKELY(!have_solution && num_iters_since_improved >= improvement_runs_max)) {
       LOG(INFO) << "We ran for " << num_iters_since_improved << " without improving on " << initial_to_beat;
@@ -208,7 +219,9 @@ int main(int argc, char *argv[]) {
   DBG(DBG_GENERIC) << "Random seed was" << seed;
   std::cout << "num_cvx_areas: " << decl.get_num_faces() << std::endl;
   std::cout << "num_iters: " << num_iters << std::endl;
-  auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time);
+  auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - solution_found_at);
+  std::cout << "time_since_found: " << milliseconds.count()/1000. << std::endl;
+  milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time);
   std::cout << "run_time: " << milliseconds.count()/1000. << std::endl;
   decl.write_obj_segments(full_obj, *out);
   return 0;
