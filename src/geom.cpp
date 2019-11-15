@@ -374,33 +374,54 @@ shoot_hole_mark_triangles_in_face(Edge * const e_start) {
 /** Mark triangles for local improvement.
  *
  * We mark select_num_faces faces.
+ *
+ * Return false if hole shooting cannot find a suitable hole anymore.
  */
-void
+bool
 DECL::
 shoot_hole_select_triangles(unsigned select_num_faces) {
   DBG_FUNC_BEGIN(DBG_SHOOTHOLE2);
   assert_hole_shooting_reset();
+  bool res;
 
-  Edge* random_edge = *random_element(std::begin(working_set.my_edges), std::end(working_set.my_edges), random_engine);
-  marking_candidates.emplace_back(random_edge);
-
-  Edge** candidate = marking_candidates.data();
-  unsigned candidate_idx = 0;
-  while (num_marked_faces < select_num_faces && candidate_idx < marking_candidates.size()) {
-    Edge* e = marking_candidates[candidate_idx];
-    if (e->triangle_marked) {
-      DBG(DBG_SHOOTHOLE2) << "Face already marked for removal.";
-      DBG(DBG_SHOOTHOLE2) << "  t: " << e->v->idx() << ", " << e->next->v->idx() << ", " << e->prev->v->idx();
-    } else {
-      num_marked_triangles += shoot_hole_mark_triangles_in_face(e);
-      num_marked_faces += 1;
+  Edge** initial_random_edge = &*random_element(std::begin(working_set.my_edges), std::end(working_set.my_edges), random_engine);
+  Edge** random_edge = initial_random_edge;
+  while (1) {
+    if ((*random_edge)->is_constrained && (*random_edge)->vertex_is_of_higher_degree()) {
+      marking_candidates.emplace_back(*random_edge);
+      res = true;
+      break;
     }
-    ++candidate_idx;
+    ++random_edge;
+    if (random_edge > &working_set.my_edges.back()) {
+      random_edge = &working_set.my_edges.front();
+    }
+    if (random_edge == initial_random_edge) {
+      res = false;
+      break;
+    }
   }
-  DBG(DBG_SHOOTHOLE2) << "Selected " << num_marked_triangles << " triangles in " << num_marked_faces << " faces;  candidate list is " << marking_candidates.size() << " long";
+  if (res) {
+    Edge** candidate = marking_candidates.data();
+    unsigned candidate_idx = 0;
+    while (num_marked_faces < select_num_faces && candidate_idx < marking_candidates.size()) {
+      Edge* e = marking_candidates[candidate_idx];
+      if (e->triangle_marked) {
+        DBG(DBG_SHOOTHOLE2) << "Face already marked for removal.";
+        DBG(DBG_SHOOTHOLE2) << "  t: " << e->v->idx() << ", " << e->next->v->idx() << ", " << e->prev->v->idx();
+      } else {
+        num_marked_triangles += shoot_hole_mark_triangles_in_face(e);
+        num_marked_faces += 1;
+      }
+      ++candidate_idx;
+    }
+    DBG(DBG_SHOOTHOLE2) << "Selected " << num_marked_triangles << " triangles in " << num_marked_faces << " faces;  candidate list is " << marking_candidates.size() << " long";
 
-  marking_candidates.clear();
+    marking_candidates.clear();
+
+  }
   DBG_FUNC_END(DBG_SHOOTHOLE2);
+  return res;
 }
 
 /** Identify interior edges of marked area
@@ -428,41 +449,48 @@ shoot_hole_interior_edges() const {
 }
 
 /** Find a simply-connected set of vertices, and make a hole, and improve its decomposition
+ *
+ * Return false if hole shooting cannot find a suitable hole anymore.
  */
-void
+bool
 DECL::
 shoot_hole(unsigned select_num_faces) {
   DBG_INDENT_INC();
 
-  shoot_hole_select_triangles(select_num_faces);
+  bool res;
+  if (shoot_hole_select_triangles(select_num_faces)) {
+    std::vector<Edge *> interior_edges = shoot_hole_interior_edges();
 
-  std::vector<Edge *> interior_edges = shoot_hole_interior_edges();
+    for (auto& e : marked_halfedges) e->triangle_marked = false;
+    WorkingSet other_workingset(
+      working_set.depth + 1,
+      std::move(marked_halfedges),
+      std::move(interior_edges),
+      num_marked_triangles,
+      num_faces - num_marked_faces + num_marked_triangles);
 
-  for (auto& e : marked_halfedges) e->triangle_marked = false;
-  WorkingSet other_workingset(
-    working_set.depth + 1,
-    std::move(marked_halfedges),
-    std::move(interior_edges),
-    num_marked_triangles,
-    num_faces - num_marked_faces + num_marked_triangles);
-
-  marked_halfedges.clear();
-  num_marked_triangles = 0;
-  num_marked_faces = 0;
+    marked_halfedges.clear();
+    num_marked_triangles = 0;
+    num_marked_faces = 0;
 
 
-  std::swap(working_set, other_workingset);
-  for (auto& e : working_set.my_edges) ++e->working_set_depth;
-
-  unsigned num_iterations = working_set.shuffled_edges.size();
-  /* in-place optimization here */
-  find_convex_decomposition_many(num_iterations);
-
-  for (auto& e : working_set.my_edges) --e->working_set_depth;
     std::swap(working_set, other_workingset);
+    for (auto& e : working_set.my_edges) ++e->working_set_depth;
 
+    unsigned num_iterations = working_set.shuffled_edges.size();
+    /* in-place optimization here */
+    find_convex_decomposition_many(num_iterations);
+
+    for (auto& e : working_set.my_edges) --e->working_set_depth;
+      std::swap(working_set, other_workingset);
+
+    res = true;
+  } else {
+    res = false;
+  };
 
   DBG_INDENT_DEC();
+  return res;
 }
 
 void
@@ -475,8 +503,12 @@ shoot_holes() {
   for (unsigned i=0; i<number_of_hole_punches; ++i) {
     unsigned hole_size = hole_size_base + geometric_distribution(random_engine);
     DBG(DBG_SHOOTHOLE2) << "  Number of faces: " << hole_size;
-    shoot_hole(hole_size);
+    bool res = shoot_hole(hole_size);
     assert_hole_shooting_reset();
+    if (!res) {
+      DBG(DBG_SHOOTHOLE) << "Stopping hole shooing because shoot_hole returned false";
+      break;
+    }
   };
 
   DBG_INDENT_DEC();

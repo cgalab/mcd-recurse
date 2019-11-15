@@ -179,20 +179,21 @@ int main(int argc, char *argv[]) {
 
     auto now = std::chrono::system_clock::now();
     unsigned this_num_faces = decl.get_num_faces();
-    if (now > last_info_time + info_interval) {
-      if (have_solution) {
-        LOG(INFO) << "Iter " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved; This num faces " << this_num_faces;
-      } else {
-        LOG(INFO) << "Iter " << num_iters << " overall; This num faces " << this_num_faces << "; to beat: " << to_beat;
-      }
-      last_info_time = now;
-    }
 
     if (this_num_faces < to_beat) {
       have_solution = true;
       num_iters_since_improved = 0;
       solution_found_at = now;
       to_beat = this_num_faces;
+    }
+
+    if (now > last_info_time + info_interval) {
+      if (have_solution) {
+        LOG(INFO) << "Iter " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved; This num faces " << this_num_faces << "; to beat: " << to_beat << "; initial to beat: " << initial_to_beat;
+      } else {
+        LOG(INFO) << "Iter " << num_iters << " overall; This num faces " << this_num_faces << "; to beat: " << to_beat;
+      }
+      last_info_time = now;
     }
 
     if (UNLIKELY(this_num_faces <= lower_bound)) {

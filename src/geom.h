@@ -242,6 +242,56 @@ public:
     next_constrained = next;
   }
 
+  /** Returns if this vertex is of degree 4 or higher.
+   *
+   * Maybe also, at some point, if it's a collinear point and of degree >=3,
+   * and also if this is a vertex on the convex hull with degree > 2;
+   *
+   * Basically. this is to know if we should bother trying to improve things here.
+   *
+   * Requires edge to be a constrained edge.
+   */
+  bool vertex_is_of_higher_degree() const {
+    assert(is_constrained);
+    if (opposite &&
+        next_constrained->opposite &&
+        next_constrained->opposite->next_constrained == opposite) {
+      /* Degree 2 vertex */
+      return false;
+    }
+
+    if (opposite &&
+        next_constrained->opposite &&
+        next_constrained->opposite->next_constrained->opposite &&
+        next_constrained->opposite->next_constrained->opposite->next_constrained == opposite) {
+      /* Degree 3 vertex */
+      /* Could still have an incident angle of exactly pi; check for that */
+      const Vertex &v0 = *v;
+      const Vertex &v1 = *opposite->v;
+      const Vertex &v2 = *next_constrained->opposite->next_constrained->v;
+      const Vertex &v3 = *next_constrained->v;
+      if (Vertex::orientation(v0, v1, v3) == 0) {
+        return true;
+      };
+      if (Vertex::orientation(v0, v2, v3) == 0) {
+        return true;
+      };
+      if (Vertex::orientation(v0, v3, v1) == 0) {
+        return true;
+      };
+
+      return false;
+    }
+
+    if (!opposite &&
+        !next_constrained->opposite) {
+      /* Degree 2 vertex on the convex hull */
+      return false;
+    }
+
+    return true;
+  }
+
 #ifndef NDEBUG
   void assert_valid() const;
 #else
@@ -431,9 +481,9 @@ class DECL {
   /* DECL hole finding functions and state mgmt */
   private:
     unsigned shoot_hole_mark_triangles_in_face(Edge * const e);
-    void shoot_hole_select_triangles(unsigned num_triangles);
+    bool shoot_hole_select_triangles(unsigned num_triangles);
     std::vector<Edge*> shoot_hole_interior_edges() const;
-    void shoot_hole(unsigned size);
+    bool shoot_hole(unsigned size);
     void shoot_holes();
 
   private:
