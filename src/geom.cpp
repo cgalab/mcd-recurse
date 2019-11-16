@@ -383,6 +383,11 @@ shoot_hole_select_triangles(unsigned select_num_faces) {
   DBG_FUNC_BEGIN(DBG_SHOOTHOLE2);
   assert_hole_shooting_reset();
   bool res;
+  #ifdef COUNT_SEARCHING_FOR_THE_RIGHT_EDGE
+    static unsigned sample_count = 0;
+    static unsigned search_for_triangle_cnt = 0;
+    static unsigned search_for_triangle_cnt_restricted = 0;
+  #endif
 
   Edge** initial_random_edge = &*random_element(std::begin(working_set.my_edges), std::end(working_set.my_edges), random_engine);
   Edge** random_edge = initial_random_edge;
@@ -392,6 +397,10 @@ shoot_hole_select_triangles(unsigned select_num_faces) {
       res = true;
       break;
     }
+    #ifdef COUNT_SEARCHING_FOR_THE_RIGHT_EDGE
+      search_for_triangle_cnt++;
+      if ((*random_edge)->is_constrained) search_for_triangle_cnt_restricted++;
+    #endif
     ++random_edge;
     if (random_edge > &working_set.my_edges.back()) {
       random_edge = &working_set.my_edges.front();
@@ -401,6 +410,18 @@ shoot_hole_select_triangles(unsigned select_num_faces) {
       break;
     }
   }
+  #ifdef COUNT_SEARCHING_FOR_THE_RIGHT_EDGE
+    if (++sample_count % 100000 == 0) {
+      LOG(INFO) << "Needed to skip, on avg, over "
+        << std::setprecision(5)
+        << 1.0*search_for_triangle_cnt_restricted/sample_count
+        << " edges; "
+        << 1.0*search_for_triangle_cnt/sample_count << " unrestricted ones";
+      sample_count = 0;
+      search_for_triangle_cnt = 0;
+      search_for_triangle_cnt_restricted = 0;
+    }
+  #endif
   if (res) {
     Edge** candidate = marking_candidates.data();
     unsigned candidate_idx = 0;
@@ -498,6 +519,22 @@ DECL::
 shoot_holes() {
   DBG_INDENT_INC();
   unsigned number_of_hole_punches = num_faces;
+
+  #if 0 /* Count vertices with high degrees */
+    unsigned vertices_of_high_degree = 0;
+    for (auto &e : all_edges) {
+      if (!e.is_constrained) continue;
+      if (e.v->already_counted) continue;
+      e.v->already_counted = true;
+      if (e.vertex_is_of_higher_degree()) {
+        ++vertices_of_high_degree;
+      }
+    }
+    for (auto &e : all_edges) {
+      e.v->already_counted = false;
+    };
+    LOG(INFO) << "Vertices with high degree: " << vertices_of_high_degree << "/" << all_vertices.size();
+  #endif
 
   DBG(DBG_SHOOTHOLE) << "Calling shoot_hole " << number_of_hole_punches << " times";
   for (unsigned i=0; i<number_of_hole_punches; ++i) {

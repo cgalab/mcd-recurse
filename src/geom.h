@@ -13,6 +13,7 @@ class Vertex {
 public:
   const double x;
   const double y;
+  // bool already_counted = false;
 
 public:
 #ifndef NDEBUG
