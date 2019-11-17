@@ -13,7 +13,9 @@ class Vertex {
 public:
   const double x;
   const double y;
-  // bool already_counted = false;
+  #ifdef COUNT_SEARCHING_FOR_THE_RIGHT_EDGE
+  bool already_counted = false;
+  #endif
 
 public:
 #ifndef NDEBUG

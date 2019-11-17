@@ -18,6 +18,9 @@ extern std::default_random_engine random_engine;
 #define STMT_END } while (0)
 
 
+/* count how many steps we needed to find an edge incident to a higher-degree vertex */
+/* #define COUNT_SEARCHING_FOR_THE_RIGHT_EDGE */
+
 #define DBG_GENERIC                       ( 1u << 0 )
 #define DBG_ITERATORS                     ( 1u << 1 )
 #define DBG_SHOOTHOLE                     ( 1u << 2 )
