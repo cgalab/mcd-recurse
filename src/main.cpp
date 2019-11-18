@@ -35,6 +35,7 @@ usage(const char *progname, int err) {
     << "  Options" << std::endl
     << "    --seed NUM             seed of the RNG" << std::endl
     << "    --full-obj             also print vertex coordinates to .obj file" << std::endl
+    << "    --face-obj             outout a face-based obj (instead of a segment based)" << std::endl
     << "    --to-beat     TO_BEAT  return when a better answer is found" << std::endl
     << "    --lower-bound NUM      return immediately when this is reached" << std::endl
     << "    --improve RUNS         Do at least RUNS runs/attempts at solving this and improving it *after* beating TO_BEAT" << std::endl
@@ -55,11 +56,12 @@ signalHandler( int signum ) {
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:fb:B:I:i:T:L:M:O";
+  const char * const short_options = "hS:fb:B:I:i:T:L:M:OF";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
     { "full-obj"    , no_argument      , 0, 'f'},
+    { "face-obj"    , no_argument      , 0, 'F'},
     { "to-beat"     , required_argument, 0, 'b'},
     { "lower-bound" , required_argument, 0, 'B'},
     { "improve"     , required_argument, 0, 'I'},
@@ -75,6 +77,7 @@ int main(int argc, char *argv[]) {
 
   long requested_seed = 0;
   bool full_obj = false;
+  bool face_obj = false;
   unsigned initial_to_beat = 0;
   unsigned lower_bound = 0;
   unsigned improvement_runs = 10;
@@ -100,6 +103,10 @@ int main(int argc, char *argv[]) {
 
       case 'f':
         full_obj = true;
+        break;
+
+      case 'F':
+        face_obj = true;
         break;
 
       case 'b':
@@ -253,6 +260,6 @@ int main(int argc, char *argv[]) {
   std::cout << "time_since_found: " << milliseconds.count()/1000. << std::endl;
   milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time);
   std::cout << "run_time: " << milliseconds.count()/1000. << std::endl;
-  decl->write_obj_segments(full_obj, *out);
+  decl->write_obj_segments(full_obj, face_obj, *out);
   return 0;
 }

@@ -730,24 +730,56 @@ assert_valid() const {
  */
 void
 DECL::
-write_obj_segments(bool dump_vertices, std::ostream &o) const {
+write_obj_segments(bool dump_vertices, bool face_based, std::ostream &o) {
   if (dump_vertices) {
     for (const auto &v : all_vertices) {
       o << "v " << v.x << " " << v.y << " 0" << std::endl;
     }
   }
-  for (const auto &e : all_edges) {
-    if (!e.is_constrained) continue;
-    if (e.opposite && e.opposite < &e) continue;
+  if (face_based) {
+    assert( std::all_of(all_edges.begin(), all_edges.end(), [](const Edge& e){return e.triangle_marked == false;}) );
 
-    int tail_idx = (e.get_tail() - all_vertices.data())+1;
-    int head_idx = (e.v - all_vertices.data())+1;
+    for (auto &e_start : all_edges) {
+      if (!e_start.is_constrained) continue;
+      if (e_start.triangle_marked) continue;
 
-    o << "l "
-      << tail_idx
-      << " "
-      << head_idx
-      << std::endl;
+      o << "f";
+      Edge *e = &e_start;
+      do {
+        assert(e->next->next->next == e);
+        assert(e->is_constrained);
+        e->triangle_marked = true;
+        int head_idx = (e->v - all_vertices.data())+1;
+        o << " " << head_idx;
+
+        while (1) {
+          e = e->next;
+          if (!e->is_constrained) {
+            e = e->opposite;
+            assert(e);
+          } else {
+            break;
+          };
+        }
+      } while (e != &e_start);
+      o << std::endl;
+    }
+
+    for (auto& e : all_edges) e.triangle_marked = false;
+  } else {
+    for (const auto &e : all_edges) {
+      if (!e.is_constrained) continue;
+      if (e.opposite && e.opposite < &e) continue;
+
+      int tail_idx = (e.get_tail() - all_vertices.data())+1;
+      int head_idx = (e.v - all_vertices.data())+1;
+
+      o << "l "
+        << tail_idx
+        << " "
+        << head_idx
+        << std::endl;
+    }
   }
 }
 

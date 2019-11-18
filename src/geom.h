@@ -538,7 +538,7 @@ class DECL {
     void reset_constraints();
     void find_convex_decomposition();
 
-    void write_obj_segments(bool dump_vertices, std::ostream &o) const;
+    void write_obj_segments(bool dump_vertices, bool face_based, std::ostream &o);
     unsigned get_num_faces() const { return num_faces; }
 
     friend std::ostream& operator<<(std::ostream&, const DECL&);
