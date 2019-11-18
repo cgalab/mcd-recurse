@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+
+from typing import Any, Dict, List, Optional, Tuple, Union, Set
+
+from abc import abstractmethod
+
+import argparse
+import datetime
+import fcntl
+import json
+import os
+import random
+import requests
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+from pathlib import Path
+
+import logging
+def L(*args, sep=' '):
+    return sep.join(str(a) for a in args)
+
+import cgs
+from cgs.tools import *
+
+class McdPartition:
+    def __init__(self, generator: str = os.path.basename(sys.argv[0])):
+        """
+        Initialize and then run this tool.
+        """
+        format='%(asctime)s '+generator+' %(filename)s:%(lineno)d  %(levelname)s - %(message)s'
+        logging.basicConfig(format=format, level=logging.INFO)
+        self.generator = generator
+        self.stored_bad_obj = 0
+        try:
+            self.main()
+        except KeyboardInterrupt:
+            logging.info(L('Interrupted'))
+            sys.exit(1)
+
+    @staticmethod
+    def prepare_obj(temp_dir: str, solution: cgs.Solution) -> str:
+        """
+        Prepare an obj file (a previous solution) for consumption by the solver programs.
+
+        The name of the file is returned.
+        """
+        obj_fn = os.path.join(temp_dir, 'instance-%s-%s.obj'%(solution._instance.name, solution._solution_id))
+        with open(obj_fn, "wt") as f:
+            solution.to_obj(f)
+        return obj_fn
+
+    def parse_obj_faces(self, fn):
+        """
+        Parse the .obj file and return a face list.
+        """
+        vertices = []
+        faces = []
+        with open(fn, "rt") as f:
+            for line in f:
+                if line.startswith('v'):
+                    line = line.rstrip()
+                    parts = line.split()
+                    parts.pop(0)
+                    vertices.append((float(parts[0]), float(parts[1])))
+                if line.startswith('f'):
+                    line = line.rstrip()
+                    parts = line.split()
+                    parts.pop(0)
+                    faces.append([int(p)-1 for p in parts])
+        return (vertices, faces)
+
+    def build_commandline_for_faceobj(self, in_obj_fn, out_fn):
+        cmd = [self.args.solver]
+        cmd += ['--improve', '0']
+        cmd += ['--improve-time', str(self.args.initial_shuffle_time)]
+        cmd += ['--max-time', str(self.args.initial_shuffle_time)]
+        cmd += ['--obj-in']
+        cmd += ['--full-obj']
+        cmd += ['--face-obj']
+        cmd += ['--start_hole_at_higher_degree_vertex_probability', '0.0']
+        cmd += [in_obj_fn, out_fn]
+        return cmd
+
+    def get_faces(self, input_fn):
+        """
+        runs an instance of mcd-recurse to maybe shuffle things around a bit,
+        but primarily create a facelist.
+        """
+        faces_fn = os.path.join(self.temp_dir, 'faces.obj')
+        cmd = self.build_commandline_for_faceobj(input_fn, faces_fn)
+        o = subprocess.check_output(cmd, stdin=None, shell=False)
+        o = o.decode()
+        face_obj = self.parse_obj_faces(faces_fn)
+        return (o, *face_obj)
+
+    @staticmethod
+    def randomize_instance_coordinates(vertices):
+        """randomly switch x and y and flip signs"""
+        sign_1 = 1 if random.randint(0, 1) > 0 else -1;
+        sign_2 = 1 if random.randint(0, 1) > 0 else -1;
+        if random.randint(0, 1) > 0:
+            vertices = [ (x*sign_1,y*sign_2) for x,y in vertices ]
+        else:
+            vertices = [ (x*sign_1,y*sign_2) for y,x in vertices ]
+        return vertices
+
+    def split_faces(self, vertices, faces):
+        xmin = min([v[0] for v in vertices])
+        xmax = max([v[0] for v in vertices])
+        ymin = min([v[1] for v in vertices])
+        ymax = max([v[1] for v in vertices])
+
+        x_step = (xmax-xmin) / self.args.split
+        y_step = (ymax-ymin) / self.args.split
+
+        buckets = [[] for x in range(self.args.split**2)]
+        for f in faces:
+            x = min([vertices[vidx][0] for vidx in f])
+            y = min([vertices[vidx][1] for vidx in f])
+
+            xi = int((x - xmin) // x_step)
+            yi = int((y - ymin) // y_step)
+            assert(0 <= xi < self.args.split)
+            assert(0 <= yi < self.args.split)
+            idx = yi * self.args.split + xi
+            buckets[idx].append(f)
+        return buckets
+
+    def setup_subproblems(self, vertices, buckets):
+        subproblems = []
+        for i, b in enumerate(buckets):
+            problem_in_fn = os.path.join(self.temp_dir, 'subproblem-%03d-in.obj'%(i,))
+            problem_out_fn = os.path.join(self.temp_dir, 'subproblem-%03d-out.obj'%(i,))
+            idxmap = {}
+            with open(problem_in_fn, "wt") as f:
+                for face in b:
+                    for e in cyclic_pair_iterator(face):
+                        for v in e:
+                            if v in idxmap: continue
+                            print("v", vertices[v][0], vertices[v][1], 0, file=f)
+                            idxmap[v] = len(idxmap) + 1
+                        print("l", idxmap[e[0]], idxmap[e[1]], file=f)
+
+            cmd = [self.args.solver]
+            cmd += ['--improve', '0']
+            cmd += ['--improve-time', str(self.args.max_child_time)]
+            cmd += ['--max-time', str(self.args.max_child_time)]
+            cmd += ['--obj-in']
+            cmd += ['--full-obj']
+            cmd += ['--face-obj']
+            cmd += [problem_in_fn, problem_out_fn]
+
+            subproblems.append({
+                'in': problem_in_fn,
+                'out': problem_out_fn,
+                'map': {v: k for k, v in idxmap.items()},
+                'cmd': cmd})
+        return subproblems
+
+
+    @staticmethod
+    def run_subproblem(cmd):
+        o = subprocess.check_output(cmd, stdin=None, shell=False)
+        return o
+
+    def run_subproblems(self, subproblems):
+        from multiprocessing import Pool
+        outputs = []
+        with Pool() as pool:
+            for i,o in enumerate(pool.imap_unordered(self.run_subproblem, [p['cmd'] for p in subproblems])):
+                outputs.append(o.decode())
+        return outputs
+
+    @staticmethod
+    def coalesce_outputs(outputs):
+        res = {}
+        res['run_time'] = 0.0
+        res['total_child_iters'] = 0
+        for o in outputs:
+            for line in o.splitlines():
+                line = line.rstrip()
+                a = line.split(':', 1)
+                if len(a) <= 1: continue
+                key, value = a
+                if key == 'version':
+                    assert('version' not in res or res['version'] == value)
+                    res['version'] = value
+                elif key == 'run_time': res['run_time'] += float(value)
+                elif key == 'num_iters': res['total_child_iters'] += int(value)
+        return res
+
+    def join_objs(self, subproblems):
+        edges = set()
+        for p in subproblems:
+            _, faces = self.parse_obj_faces(p['out'])
+            for face in faces:
+                for e in cyclic_pair_iterator(face):
+                    s = sorted( (p['map'][e[0]+1], p['map'][e[1]+1]) )
+                    edges.add( (s[0], s[1]) )
+        return edges
+
+    def run(self):
+        """
+        Run a given instance.
+        """
+        logging.info(L("Getting face-based obj (and maybe shuffling for a minute"))
+        get_faces_output, vertices, faces = self.get_faces(self.args.input_obj)
+        vertices = self.randomize_instance_coordinates(vertices)
+        buckets = self.split_faces(vertices, faces)
+
+        subproblems = self.setup_subproblems(vertices, buckets)
+        outputs = self.run_subproblems(subproblems)
+        metadata = self.coalesce_outputs([get_faces_output] + outputs)
+        metadata['splits'] = len(buckets)
+        edges = self.join_objs(subproblems)
+        with open(self.args.output_obj, "wt") as f:
+            for e in edges:
+                print("l", e[0]+1, e[1]+1, file=f)
+        for k, v in metadata.items():
+            print("%s:"%(k,), v)
+
+    def main(self):
+        """
+        Parse the command line and launch the solver
+        """
+        parser = argparse.ArgumentParser(description='cgshop2020 wrapper for '+self.generator)
+        parser.add_argument("--url", dest="url", default=None)
+        parser.add_argument("--api-key", dest="apikey")
+        parser.add_argument("--no-ssl-check", dest="nosslcheck", action="store_true", help="Disable SSL certificate checks")
+        parser.add_argument("--proxy", dest="proxy", help="set proxy (e.g. socks5://localhost:1080/)")
+
+        parser.add_argument('--max-size', dest='max_size', type=int)
+        parser.add_argument('--min-size', dest='min_size', type=int)
+
+        parser.add_argument('--initial-shuffle-time', dest='initial_shuffle_time', default=60, type=int, help='How much time to spend on the initial shuffle')
+
+        parser.add_argument("--verbose", dest="verbose", action="store_true", default=False, help='verbose')
+
+        parser.add_argument('--max-child-time', dest='max_child_time', type=int, default=1800, help='how long to work on each child')
+        parser.add_argument('--split', dest='split', type=int, default=2, help='how many splits per dimension')
+
+        parser.add_argument('solver', type=str)
+        parser.add_argument('input_obj')
+        parser.add_argument('output_obj')
+
+        self.args = parser.parse_args()
+        if self.args.verbose:
+            logging.setLevel(logging.DEBUG)
+
+        self.db = cgs.InstanceDatabase(
+            url        = self.args.url,
+            nosslcheck = self.args.nosslcheck,
+            proxy      = self.args.proxy,
+            apikey     = self.args.apikey)
+
+        prefix = "%s-"%(self.generator, )
+        with tempfile.TemporaryDirectory(prefix=self.generator+"-") as temp_dir:
+            self.temp_dir = temp_dir
+            self.run()
+
+if __name__ == "__main__":
+    McdPartition()
