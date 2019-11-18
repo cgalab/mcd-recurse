@@ -12,6 +12,7 @@
 INITIALIZE_EASYLOGGINGPP
 unsigned DBG_INDENT_CTR = 0;
 std::default_random_engine random_engine;
+bool main_loop_interrupted = false;
 
 /*seconds*/
 
@@ -47,7 +48,6 @@ usage(const char *progname, int err) {
 }
 
 
-bool main_loop_interrupted = false;
 void signalHandler( int signum ) {
    LOG(INFO) << "Interrupt signal (" << signum << ") received.\n";
    main_loop_interrupted = true;

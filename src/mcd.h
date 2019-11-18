@@ -11,6 +11,7 @@
 #include <random>
 
 extern std::default_random_engine random_engine;
+extern bool main_loop_interrupted;
 
 /** Expands to a syntactically valid empty statement.  */
 #define STMT_NIL (void)0

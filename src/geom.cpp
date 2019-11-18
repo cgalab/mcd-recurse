@@ -599,8 +599,12 @@ shoot_holes() {
     DBG(DBG_SHOOTHOLE2) << "  Number of faces: " << hole_size;
     bool res = shoot_hole(hole_size);
     assert_hole_shooting_reset();
-    if (!res) {
-      DBG(DBG_SHOOTHOLE) << "Stopping hole shooing because shoot_hole returned false";
+    if (UNLIKELY(!res)) {
+      DBG(DBG_SHOOTHOLE) << "Stopping hole shooting because shoot_hole returned false";
+      break;
+    }
+    if (UNLIKELY(main_loop_interrupted)) {
+      LOG(INFO) << "Stopping hole shooting because of main loop interrupt";
       break;
     }
   };
