@@ -41,10 +41,11 @@ assert_valid() const {
 #endif
 
 DECL::
-DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initial_constrained_)
+DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initial_constrained_, double start_hole_at_higher_degree_vertex_probability_)
   : initial_constrained(initial_constrained_)
   , all_vertices(std::move(vertices))
   , all_edges(std::move(triangulation_result.all_edges))
+  , start_hole_at_higher_degree_vertex_probability(start_hole_at_higher_degree_vertex_probability_)
 {
   geometric_distribution = std::geometric_distribution<unsigned>(hole_size_geometric_param);
   std::cout << "hole_size: " << hole_size_base << "+P_geom(i|" << hole_size_geometric_param << ")" << std::endl;

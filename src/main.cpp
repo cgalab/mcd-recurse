@@ -13,6 +13,7 @@ INITIALIZE_EASYLOGGINGPP
 unsigned DBG_INDENT_CTR = 0;
 std::default_random_engine random_engine;
 bool main_loop_interrupted = false;
+const double DECL::default_start_hole_at_higher_degree_vertex_probability = 0.75;
 
 /*seconds*/
 
@@ -44,6 +45,7 @@ usage(const char *progname, int err) {
     << "    --max-time NUM         Do not start a new run after NUM seconds (overrides improve-* bounds)" << std::endl
     << "    --log-interval SECONDS Report on state regularly." << std::endl
     << "    --obj-in               Input is an obj file, potentially with already segments/faces to improve" << std::endl
+    << "    --start_hole_at_higher_degree_vertex_probability (default: " << DECL::default_start_hole_at_higher_degree_vertex_probability << ")" << std::endl
   ;
   exit(err);
 }
@@ -56,7 +58,7 @@ signalHandler( int signum ) {
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:fb:B:I:i:T:L:M:OF";
+  const char * const short_options = "hS:fb:B:I:i:T:L:M:OFH:";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
@@ -70,6 +72,7 @@ int main(int argc, char *argv[]) {
     { "max-time"    , required_argument, 0, 'T'},
     { "log-interval", required_argument, 0, 'L'},
     { "obj-in",       no_argument      , 0, 'O'},
+    { "start_hole_at_higher_degree_vertex_probability", required_argument, 0, 'H'},
     { 0, 0, 0, 0}
   };
 
@@ -86,6 +89,7 @@ int main(int argc, char *argv[]) {
   unsigned log_interval = 60;
   int max_time = 0;
   bool obj_in = false;
+  double start_hole_at_higher_degree_vertex_probability = DECL::default_start_hole_at_higher_degree_vertex_probability;
 
   while (1) {
     int option_index = 0;
@@ -139,6 +143,10 @@ int main(int argc, char *argv[]) {
 
       case 'O':
         obj_in = true;
+        break;
+
+      case 'H':
+        start_hole_at_higher_degree_vertex_probability = std::stod(optarg);
         break;
 
       default:
@@ -196,9 +204,9 @@ int main(int argc, char *argv[]) {
   std::unique_ptr<DECL> decl;
   if (obj_in) {
     std::pair<VertexList, InputEdgeSet> p = load_obj(*in);
-    decl = std::make_unique<DECL>( std::move(p.first), &p.second );
+    decl = std::make_unique<DECL>( std::move(p.first), &p.second, start_hole_at_higher_degree_vertex_probability );
   } else {
-    decl = std::make_unique<DECL>( load_vertices(*in) );
+    decl = std::make_unique<DECL>( load_vertices(*in), start_hole_at_higher_degree_vertex_probability );
   }
   initial_to_beat = initial_to_beat ? initial_to_beat : decl->get_num_faces();
   unsigned to_beat = initial_to_beat;

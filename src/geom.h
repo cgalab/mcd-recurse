@@ -511,28 +511,31 @@ class DECL {
 
   private:
     /* private constructor to make the public one use decl_triangulate's result. */
-    DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initial_constrained_);
+    DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initial_constrained_, double start_hole_at_higher_degree_vertex_probability_);
 
     /* optimization in punched hole */
     void find_convex_decomposition_many(unsigned num_iterations);
 
     std::geometric_distribution<unsigned> geometric_distribution;
+
   /* public interface */
   public:
     const unsigned hole_size_base = 7;
     const double hole_size_geometric_param = 0.4; /* Less means larger holes */
     const double flip_nums_exponent = 1./5;
-    const double start_hole_at_higher_degree_vertex_probability = 0.75;
+    const double start_hole_at_higher_degree_vertex_probability;
+    static const double default_start_hole_at_higher_degree_vertex_probability;
 
     /** Initialize the DECL with the vertices and a triangulation of their CH */
-    DECL(VertexList&& vertices)
-    : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices), false)
+    DECL(VertexList&& vertices, double start_hole_at_higher_degree_vertex_probability_ = default_start_hole_at_higher_degree_vertex_probability)
+    : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices), false, start_hole_at_higher_degree_vertex_probability_)
     {}
 
-    DECL(VertexList&& vertices, const InputEdgeSet* edges)
+    DECL(VertexList&& vertices, const InputEdgeSet* edges, double start_hole_at_higher_degree_vertex_probability_ = default_start_hole_at_higher_degree_vertex_probability)
     : DECL(std::forward<VertexList>(vertices),
            decl_triangulate(vertices, edges),
-           true)
+           true,
+           start_hole_at_higher_degree_vertex_probability_)
     {}
 
     void reset_constraints();
@@ -574,8 +577,6 @@ private:
   void assert_hole_shooting_reset() const {}
   void assert_vertex_is_on_ch(Edge *) const {}
 #endif
-
-
 };
 
 std::ostream& operator<<(std::ostream&, const Vertex&);
