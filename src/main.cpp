@@ -188,9 +188,8 @@ int main(int argc, char *argv[]) {
 
   std::unique_ptr<DECL> decl;
   if (obj_in) {
-    auto [vl, el] = load_obj(*in);
-    decl = std::make_unique<DECL>( std::move(vl), &el );
-    el.clear();
+    std::pair<VertexList, InputEdgeSet> p = load_obj(*in);
+    decl = std::make_unique<DECL>( std::move(p.first), &p.second );
   } else {
     decl = std::make_unique<DECL>( load_vertices(*in) );
   }
