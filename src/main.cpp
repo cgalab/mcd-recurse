@@ -48,7 +48,8 @@ usage(const char *progname, int err) {
 }
 
 
-void signalHandler( int signum ) {
+static void
+signalHandler( int signum ) {
    LOG(INFO) << "Interrupt signal (" << signum << ") received.\n";
    main_loop_interrupted = true;
 }
