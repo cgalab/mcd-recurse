@@ -7,6 +7,7 @@
 #include <iostream>
 #include <chrono>
 #include <getopt.h>
+#include <csignal>
 
 INITIALIZE_EASYLOGGINGPP
 unsigned DBG_INDENT_CTR = 0;
@@ -43,6 +44,13 @@ usage(const char *progname, int err) {
     << "    --obj-in               Input is an obj file, potentially with already segments/faces to improve" << std::endl
   ;
   exit(err);
+}
+
+
+bool main_loop_interrupted = false;
+void signalHandler( int signum ) {
+   LOG(INFO) << "Interrupt signal (" << signum << ") received.\n";
+   main_loop_interrupted = true;
 }
 
 int main(int argc, char *argv[]) {
@@ -155,6 +163,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  signal(SIGINT, signalHandler);
+  signal(SIGTERM, signalHandler);
+  signal(SIGUSR1, signalHandler);
+  signal(SIGUSR2, signalHandler);
 
   auto start_time = std::chrono::system_clock::now();
   auto end_time = start_time + std::chrono::seconds(max_time);
@@ -228,7 +240,10 @@ int main(int argc, char *argv[]) {
       LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " iterations total.)";
       std::cout << "exit_reason: timeout" << std::endl;
       break;
-    };
+    } else if (UNLIKELY(main_loop_interrupted)) {
+      std::cout << "exit_reason: interrupt" << std::endl;
+      break;
+    }
   }
 
   DBG(DBG_GENERIC) << "Random seed was" << seed;
