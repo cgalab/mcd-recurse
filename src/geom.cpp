@@ -49,6 +49,7 @@ DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initi
   geometric_distribution = std::geometric_distribution<unsigned>(hole_size_geometric_param);
   std::cout << "hole_size: " << hole_size_base << "+P_geom(i|" << hole_size_geometric_param << ")" << std::endl;
   std::cout << "flip_nums_exponent: " << flip_nums_exponent << std::endl;
+  std::cout << "start_hole_at_higher_degree_vertex_probability: " << start_hole_at_higher_degree_vertex_probability << std::endl;
 
   working_set.shuffled_edges = std::move(triangulation_result.interior_edges);
 
@@ -446,28 +447,32 @@ shoot_hole_select_triangles(unsigned select_num_faces) {
     static unsigned search_for_triangle_cnt_restricted = 0;
   #endif
 
+  std::uniform_real_distribution<> dist(0, 1);
+  bool look_at_higher_degree_vertex = (dist(random_engine) <= start_hole_at_higher_degree_vertex_probability);
+
   Edge** initial_random_edge = &*random_element(std::begin(working_set.my_edges), std::end(working_set.my_edges), random_engine);
   Edge** random_edge = initial_random_edge;
-  while (1) {
-    if ((*random_edge)->is_constrained && (*random_edge)->vertex_is_of_higher_degree()) {
-      marking_candidates.emplace_back(*random_edge);
-      res = true;
-      break;
+  if (look_at_higher_degree_vertex) {
+    while (1) {
+      if ((*random_edge)->is_constrained && (*random_edge)->vertex_is_of_higher_degree()) {
+        marking_candidates.emplace_back(*random_edge);
+        res = true;
+        break;
+      }
+      #ifdef COUNT_SEARCHING_FOR_THE_RIGHT_EDGE
+        search_for_triangle_cnt++;
+        if ((*random_edge)->is_constrained) search_for_triangle_cnt_restricted++;
+      #endif
+      ++random_edge;
+      if (random_edge > &working_set.my_edges.back()) {
+        random_edge = &working_set.my_edges.front();
+      }
+      if (random_edge == initial_random_edge) {
+        res = false;
+        break;
+      }
     }
     #ifdef COUNT_SEARCHING_FOR_THE_RIGHT_EDGE
-      search_for_triangle_cnt++;
-      if ((*random_edge)->is_constrained) search_for_triangle_cnt_restricted++;
-    #endif
-    ++random_edge;
-    if (random_edge > &working_set.my_edges.back()) {
-      random_edge = &working_set.my_edges.front();
-    }
-    if (random_edge == initial_random_edge) {
-      res = false;
-      break;
-    }
-  }
-  #ifdef COUNT_SEARCHING_FOR_THE_RIGHT_EDGE
     if (++sample_count % 100000 == 0) {
       LOG(INFO) << "Needed to skip, on avg, over "
         << std::setprecision(5)
@@ -478,7 +483,11 @@ shoot_hole_select_triangles(unsigned select_num_faces) {
       search_for_triangle_cnt = 0;
       search_for_triangle_cnt_restricted = 0;
     }
-  #endif
+    #endif
+  } else {
+    marking_candidates.emplace_back(*random_edge);
+    res = true;
+  };
   if (res) {
     Edge** candidate = marking_candidates.data();
     unsigned candidate_idx = 0;

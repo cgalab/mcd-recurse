@@ -520,8 +520,9 @@ class DECL {
   /* public interface */
   public:
     const unsigned hole_size_base = 7;
-    const double hole_size_geometric_param = 0.4;
+    const double hole_size_geometric_param = 0.4; /* Less means larger holes */
     const double flip_nums_exponent = 1./5;
+    const double start_hole_at_higher_degree_vertex_probability = 0.75;
 
     /** Initialize the DECL with the vertices and a triangulation of their CH */
     DECL(VertexList&& vertices)
