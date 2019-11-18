@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.4)
 project (mcde)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 if(POLICY CMP0077)
@@ -6,7 +6,11 @@ if(POLICY CMP0077)
 endif()
 
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
-set (CMAKE_CXX_STANDARD 17)
+IF ("${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}" GREATER "3.7")
+  set (CMAKE_CXX_STANDARD 17)
+ELSE ()
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+ENDIF ()
 
 set( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall" )
 

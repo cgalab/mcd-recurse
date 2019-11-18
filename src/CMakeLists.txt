@@ -1,4 +1,4 @@
-project (mcd-recurse VERSION "0.1" DESCRIPTION "mcd-recurse")
+project (mcd-recurse VERSION "0.1" LANGUAGES "C")
 
 set(_target "mcd-recurse")
 
