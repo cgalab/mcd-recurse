@@ -34,7 +34,6 @@ class McdPartition:
         format='%(asctime)s '+generator+' %(filename)s:%(lineno)d  %(levelname)s - %(message)s'
         logging.basicConfig(format=format, level=logging.INFO)
         self.generator = generator
-        self.stored_bad_obj = 0
         try:
             self.main()
         except KeyboardInterrupt:
@@ -133,10 +132,12 @@ class McdPartition:
     def setup_subproblems(self, vertices, buckets):
         subproblems = []
         for i, b in enumerate(buckets):
-            problem_in_fn = os.path.join(self.temp_dir, 'subproblem-%03d-in.obj'%(i,))
-            problem_out_fn = os.path.join(self.temp_dir, 'subproblem-%03d-out.obj'%(i,))
+            p = {}
+
+            p['in'] = os.path.join(self.temp_dir, 'subproblem-%03d-in.obj'%(i,))
+            p['out'] = os.path.join(self.temp_dir, 'subproblem-%03d-out.obj'%(i,))
             idxmap = {}
-            with open(problem_in_fn, "wt") as f:
+            with open(p['in'], "wt") as f:
                 for face in b:
                     for e in cyclic_pair_iterator(face):
                         for v in e:
@@ -145,35 +146,49 @@ class McdPartition:
                             idxmap[v] = len(idxmap) + 1
                         print("l", idxmap[e[0]], idxmap[e[1]], file=f)
 
-            cmd = [self.args.solver]
+            cmd = []
+            if self.args.sge is not None:
+                p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d-stdout.obj'%(i,))
+                p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d-stderr.obj'%(i,))
+                cmd += ['qsub', '-sync', 'y', '-N', self.generator, '-t', '1', '-q', self.args.sge, '-e', p['stderr_fn'], '-o', p['stdout_fn'], '-b', 'y']
+            cmd += [self.args.solver]
             cmd += ['--improve', '0']
             cmd += ['--improve-time', str(self.args.max_child_time)]
             cmd += ['--max-time', str(self.args.max_child_time)]
             cmd += ['--obj-in']
             cmd += ['--full-obj']
             cmd += ['--face-obj']
-            cmd += [problem_in_fn, problem_out_fn]
+            cmd += [p['in'], p['out']]
+            logging.info(L("command will be", cmd))
 
-            subproblems.append({
-                'in': problem_in_fn,
-                'out': problem_out_fn,
-                'map': {v: k for k, v in idxmap.items()},
-                'cmd': cmd})
+            p['map'] = {v: k for k, v in idxmap.items()}
+            p['cmd'] = cmd
+            subproblems.append(p)
         return subproblems
 
 
     @staticmethod
-    def run_subproblem(cmd):
-        o = subprocess.check_output(cmd, stdin=None, shell=False)
-        return o
+    def run_subproblem(p):
+        try:
+            o = subprocess.check_output(p['cmd'], stdin=None, shell=False)
+            return o
+        except subprocess.CalledProcessError as e:
+            if 'stderr_fn' in p:
+                with open(p['stderr_fn'], "r") as f:
+                    shutil.copyfileobj(f, sys.stderr)
+                sys.stderr.flush()
+            raise e
+        return ''
 
     def run_subproblems(self, subproblems):
         from multiprocessing import Pool
         outputs = []
         with Pool() as pool:
-            for i,o in enumerate(pool.imap_unordered(self.run_subproblem, [p['cmd'] for p in subproblems])):
-                outputs.append(o.decode())
-        return outputs
+            for i,o in enumerate(pool.imap_unordered(self.run_subproblem, subproblems)):
+                p = subproblems[i]
+                p['stdout'] = o.decode()
+                if 'stdout_fn' in p:
+                    p['stdout'] = open(p['stdout_fn'], "rt").read()
 
     @staticmethod
     def coalesce_outputs(outputs):
@@ -207,14 +222,14 @@ class McdPartition:
         """
         Run a given instance.
         """
-        logging.info(L("Getting face-based obj (and maybe shuffling for a minute"))
+        logging.info(L("Getting face-based obj (and maybe shuffling for a minute)"))
         get_faces_output, vertices, faces = self.get_faces(self.args.input_obj)
         vertices = self.randomize_instance_coordinates(vertices)
         buckets = self.split_faces(vertices, faces)
 
         subproblems = self.setup_subproblems(vertices, buckets)
-        outputs = self.run_subproblems(subproblems)
-        metadata = self.coalesce_outputs([get_faces_output] + outputs)
+        self.run_subproblems(subproblems)
+        metadata = self.coalesce_outputs([get_faces_output] + [p['stdout'] for p in subproblems])
         metadata['splits'] = len(buckets)
         edges = self.join_objs(subproblems)
         with open(self.args.output_obj, "wt") as f:
@@ -239,6 +254,7 @@ class McdPartition:
         parser.add_argument('--initial-shuffle-time', dest='initial_shuffle_time', default=60, type=int, help='How much time to spend on the initial shuffle')
 
         parser.add_argument("--verbose", dest="verbose", action="store_true", default=False, help='verbose')
+        parser.add_argument('--sge', dest='sge', type=str, help='run childs via gridengine queue')
 
         parser.add_argument('--max-child-time', dest='max_child_time', type=int, default=1800, help='how long to work on each child')
         parser.add_argument('--split', dest='split', type=int, default=2, help='how many splits per dimension')
@@ -258,9 +274,16 @@ class McdPartition:
             apikey     = self.args.apikey)
 
         prefix = "%s-"%(self.generator, )
-        with tempfile.TemporaryDirectory(prefix=self.generator+"-") as temp_dir:
-            self.temp_dir = temp_dir
+        if self.args.sge is not None:
+            prefix = os.path.join(os.getcwd(), prefix)
+        self.temp_dir = None
+        try:
+            self.temp_dir = tempfile.mkdtemp(prefix=prefix)
             self.run()
+        finally:
+            if self.temp_dir is not None:
+                shutil.rmtree(self.temp_dir)
+
 
 if __name__ == "__main__":
     McdPartition()
