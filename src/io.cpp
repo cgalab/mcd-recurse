@@ -24,7 +24,7 @@ load_vertices(std::istream& in) {
   return res;
 }
 
-std::pair<VertexList, std::vector<std::pair<unsigned,unsigned>>>
+std::pair<VertexList, InputEdgeSet>
 load_obj(std::istream& in) {
   std::string line;
 
@@ -51,13 +51,22 @@ load_obj(std::istream& in) {
       unsigned v;
       while (!ss.fail()) {
         ss >> v;
-        edge_list.emplace_back(std::make_pair(prev_vertex, v));
+        edge_list.emplace_back(sorted_pair(prev_vertex-1, v-1));
       }
       if (type == 'f') {
-        edge_list.emplace_back(std::make_pair(v, first_vertex));
+        edge_list.emplace_back(sorted_pair(v-1, first_vertex-1));
       }
     }
   }
-
+  /*
+  sort(edge_list.begin(), edge_list.end());
+  edge_list.erase(unique(edge_list.begin(), edge_list.end()), edge_list.end());
   return std::make_pair(std::move(vertex_list), std::move(edge_list));
+  */
+
+  InputEdgeSet edge_set(edge_list.size());
+  for (auto& i: edge_list)
+      edge_set.insert(i);
+
+  return std::make_pair(std::move(vertex_list), std::move(edge_set));
 }

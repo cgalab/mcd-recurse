@@ -41,22 +41,24 @@ assert_valid() const {
 #endif
 
 DECL::
-DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& triangulation_result)
-  : all_vertices(std::move(vertices))
-  , all_edges(std::move(triangulation_result.first))
+DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initial_constrained_)
+  : initial_constrained(initial_constrained_)
+  , all_vertices(std::move(vertices))
+  , all_edges(std::move(triangulation_result.all_edges))
 {
   geometric_distribution = std::geometric_distribution<unsigned>(hole_size_geometric_param);
   std::cout << "hole_size: " << hole_size_base << "+P_geom(i|" << hole_size_geometric_param << ")" << std::endl;
   std::cout << "flip_nums_exponent: " << flip_nums_exponent << std::endl;
 
-  working_set.shuffled_edges = std::move(triangulation_result.second);
+  working_set.shuffled_edges = std::move(triangulation_result.interior_edges);
 
-  unsigned number_of_ch_vertices = all_edges.size() - working_set.shuffled_edges.size();
-  num_faces = 1 + (all_edges.size() + number_of_ch_vertices) / 2 - all_vertices.size();
+  unsigned number_of_bd_vertices = all_edges.size() - working_set.shuffled_edges.size();
+  unsigned num_triangles = 1 + (all_edges.size() + number_of_bd_vertices) / 2 - all_vertices.size();
+  num_faces = triangulation_result.num_faces;
 
   working_set.my_edges.resize(all_edges.size());
   std::iota(std::begin(working_set.my_edges), std::end(working_set.my_edges), all_edges.data());
-  working_set.num_my_triangles = num_faces;
+  working_set.num_my_triangles = num_triangles;
   working_set.num_faces_mine_constrained = num_faces;
 }
 
@@ -64,7 +66,7 @@ DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& t
  */
 void
 DECL::
-decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin) {
+decl_triangulate_prepare(const VertexList& vertices, const InputEdgeSet* edges, struct triangulateio& tin) {
   int num_v = vertices.size();
 
   /* Load vertex coordinates */
@@ -76,28 +78,46 @@ decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin) 
     *(dp++) = vertices[i].y;
   }
   assert(dp == tin.pointlist + tin.numberofpoints*2);
+
+  if (edges) {
+    unsigned num_e = edges->size();
+    tin.numberofsegments = num_e;
+    tin.segmentlist = (int *) my_malloc_c(num_e*2 * sizeof(int));
+    int *ip = tin.segmentlist;
+    for (const auto& e : *edges) {
+      *(ip++) = e.first;
+      *(ip++) = e.second;
+    }
+  }
 }
 
 /** Process triangle's in/out data structure and create the DECL
+ *
+ * Returns a pair with an edgelist and a list of pointers to interior edges.
  */
-std::pair<FixedVector<Edge>, std::vector<Edge*>>
+DECL::TriangulateResult
 DECL::
-decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout) {
+decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout, const InputEdgeSet* input_edges) {
   FixedVector<Edge> edges;
   std::vector<Edge*> interior_edges;
 
   unsigned num_t = tout.numberoftriangles;
   unsigned num_e = tout.numberofedges;
-  unsigned num_ch_v = tout.numberofsegments;
+  int num_bd_v = 2*(vertices.size()-1) - num_t;
+  assert(num_bd_v > 0);
+  {
+    bool constrained_triangulation = (input_edges != NULL);
+    assert(constrained_triangulation || num_bd_v == tout.numberofsegments);
+  }
 
-  int num_halfedges = num_e*2 - num_ch_v;
+  int num_halfedges = num_e*2 - num_bd_v;
   assert(num_halfedges > 0);
   edges.reserve(num_halfedges);
   interior_edges.reserve(num_halfedges - 3);
   Edge * edge_end = edges.data();
   int *tptr = tout.trianglelist;
   int *nptr = tout.neighborlist;
-  unsigned edges_on_ch = 0;
+  int edges_on_ch = 0;
   for (unsigned i=0; i<num_t; ++i) {
     for (unsigned j=0; j<3; ++j) {
       Edge *buddy = NULL;
@@ -108,51 +128,88 @@ decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout)
       } else {
         ++edges_on_ch;
       }
-      int edge_points_to_vertex_idx = tptr[ prev_edge_offset[j] ];
-      Vertex *edge_points_to_vertex = &vertices[edge_points_to_vertex_idx];
-      edges.emplace_back(Edge(edge_end+next_edge_offset[j], edge_end+prev_edge_offset[j], buddy, edge_points_to_vertex, edges.size()));
+      int edge_head_vertex_idx = tptr[ prev_edge_offset[j] ];
+      Vertex *edge_head_vertex = &vertices[edge_head_vertex_idx];
+      int edge_tail_vertex_idx = tptr[ next_edge_offset[j] ];
+
+      Edge *next = edge_end+next_edge_offset[j];
+      Edge *prev = edge_end+prev_edge_offset[j];
+
+      edges.emplace_back(Edge(next, prev, buddy, edge_head_vertex, edges.size()));
       ++nptr;
     }
     edge_end += 3;
     tptr += 3;
   }
-  assert(num_ch_v == edges_on_ch);
+  assert(num_bd_v == edges_on_ch);
   assert(tptr == tout.trianglelist + 3*num_t);
   assert(nptr == tout.neighborlist + 3*num_t);
   assert(edge_end == &edges[num_halfedges]);
 
-  assert((edges.size() + num_ch_v) % 2 == 0);
-  assert(num_t == 1 + (edges.size() + num_ch_v)/2 - vertices.size());
+  assert((edges.size() + num_bd_v) % 2 == 0);
+  assert(num_t == 1 + (edges.size() + num_bd_v)/2 - vertices.size());
 
-  // num_faces = num_t;
-  // unsigned number_of_ch_vertices = num_ch_v;
-  return std::make_pair(std::move(edges), std::move(interior_edges));
+  unsigned num_faces = num_t;
+  if (input_edges) { /* Improve an existing solution */
+    for (auto &e : edges) {
+      if (!e.opposite) {
+        /* We never unconstrain edges on the boundary. */
+        continue;
+      }
+      if (!e.is_constrained) {
+        continue;
+      }
+
+      unsigned head_idx = e.v - &vertices.front();
+      unsigned tail_idx = e.opposite->v - &vertices.front();
+      assert(head_idx < vertices.size());
+      assert(tail_idx < vertices.size());
+      bool is_constrained = (input_edges->find(sorted_pair(head_idx, tail_idx)) != input_edges->end() );
+      if (!is_constrained) {
+        e.unconstrain();
+        --num_faces;
+      }
+    }
+    if (num_faces != num_t - (num_e - input_edges->size())) {
+      LOG(ERROR) << "Do not have the expected number of faces after unconstraining interior triangulation edges.  Is the outer boundary properl constrained?";
+      exit(1);
+    }
+  }
+
+  return TriangulateResult { std::move(edges), std::move(interior_edges), num_faces };
 }
 
 /** Triangulare the pointset and create the DECL
+ *
+ * Returns the pair from decl_triangulate_process, with an edgelist and a list of pointers to interior edges.
  */
-std::pair<FixedVector<Edge>, std::vector<Edge*>>
+DECL::TriangulateResult
 DECL::
-decl_triangulate(VertexList& vertices) {
+decl_triangulate(VertexList& vertices, const InputEdgeSet* edges) {
   struct triangulateio tin, tout;
   memset(&tin, 0, sizeof(tin));
   memset(&tout, 0, sizeof(tout));
 
-  decl_triangulate_prepare(vertices, tin);
+  decl_triangulate_prepare(vertices, edges, tin);
 
   /* triangle options:
    * //N: no nodes output
    * //P: no poly output
    * Q: quiet
-   * c: triangulate the convex hull
+   * //c: triangulate the convex hull
    * n: output neighbors list
-   * // p: operate on a PSLG, with vertices, segments, and more.  We want
+   * p: operate on a PSLG, with vertices, segments, and more.  We want
    *  segments part of that.
    * z: start indexes at 0
    */
-  char trioptions[] = "Qcnz";
-  triangulate(trioptions, &tin, &tout, NULL);
-  auto res = decl_triangulate_process(vertices, tout);
+  if (edges) {
+    char trioptions[] = "Qnzp";
+    triangulate(trioptions, &tin, &tout, NULL);
+  } else {
+    char trioptions[] = "Qnz";
+    triangulate(trioptions, &tin, &tout, NULL);
+  }
+  auto res = decl_triangulate_process(vertices, tout, edges);
 
   my_free_c(tin.pointlist);
   my_free_c(tin.segmentlist);
@@ -626,7 +683,7 @@ find_convex_decomposition() {
   DBG_FUNC_BEGIN(DBG_DECOMPOSITION_LOOP);
 
   assert_valid();
-  if (working_set.num_my_triangles == num_faces) {
+  if (!initial_constrained && working_set.num_my_triangles == num_faces) {
     flip_random_edges_and_reset_constraints();
     unconstrain_random_edges();
   };

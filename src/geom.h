@@ -4,6 +4,7 @@
 #include "tools.h"
 
 #include <vector>
+#include <unordered_set>
 
 class Edge;
 class DECL;
@@ -50,6 +51,19 @@ public:
 };
 using VertexList = std::vector<Vertex>;
 // }}}
+
+#if 0
+template<>
+struct std::hash<std::pair<unsigned, unsigned>> {
+  size_t operator() (std::pair<unsigned, unsigned> const& p) {
+    return (std::hash<unsigned>()(p.first) ^ std::hash<unsigned>()(p.second));
+  }
+};
+#endif
+struct PairHasher {
+    std::size_t operator()(const std::pair<unsigned, unsigned> &p) const { return std::hash<unsigned>()(p.first) ^ std::hash<unsigned>()(p.second); }
+};
+using InputEdgeSet = std::unordered_set<std::pair<unsigned,unsigned>, PairHasher>;
 
 // {{{ Edge
 /** A multi-layer half-edge data structure.
@@ -451,10 +465,15 @@ class DECL {
 
   /* Helper functions */
   private:
+    struct TriangulateResult {
+      FixedVector<Edge> all_edges;
+      std::vector<Edge*> interior_edges;
+      unsigned num_faces;
+    };
     /* setup */
-    static void decl_triangulate_prepare(const VertexList& vertices, struct triangulateio& tin);
-    static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout);
-    static std::pair<FixedVector<Edge>, std::vector<Edge*>> decl_triangulate(VertexList& vertices);
+    static void decl_triangulate_prepare(const VertexList& vertices, const InputEdgeSet* edges, struct triangulateio& tin);
+    static TriangulateResult decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout, const InputEdgeSet* edges);
+    static TriangulateResult decl_triangulate(VertexList& vertices, const InputEdgeSet* edges=NULL);
 
     /* Decomposition */
     void flip_random_edges_and_reset_constraints();
@@ -464,6 +483,7 @@ class DECL {
 
   /* The state of the DECL */
   private:
+    const bool initial_constrained;
     /* These stay fixed over all iterations.
      *
      * (not necessarily their content, but * at least the set and order) */
@@ -491,7 +511,7 @@ class DECL {
 
   private:
     /* private constructor to make the public one use decl_triangulate's result. */
-    DECL(VertexList&& vertices, std::pair<FixedVector<Edge>, std::vector<Edge*>>&& triangulation_result);
+    DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initial_constrained_);
 
     /* optimization in punched hole */
     void find_convex_decomposition_many(unsigned num_iterations);
@@ -505,7 +525,14 @@ class DECL {
 
     /** Initialize the DECL with the vertices and a triangulation of their CH */
     DECL(VertexList&& vertices)
-    : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices)) {}
+    : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices), false)
+    {}
+
+    DECL(VertexList&& vertices, const InputEdgeSet* edges)
+    : DECL(std::forward<VertexList>(vertices),
+           decl_triangulate(vertices, edges),
+           true)
+    {}
 
     void reset_constraints();
     void find_convex_decomposition();

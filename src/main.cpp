@@ -40,12 +40,13 @@ usage(const char *progname, int err) {
     << "    --improve-max RUNS     Try at most RUNS runs/attempts at solving this before beating TO_BEAT" << std::endl
     << "    --max-time NUM         Do not start a new run after NUM seconds (overrides improve-* bounds)" << std::endl
     << "    --log-interval SECONDS Report on state regularly." << std::endl
+    << "    --obj-in               Input is an obj file, potentially with already segments/faces to improve" << std::endl
   ;
   exit(err);
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:fb:B:I:i:T:L:M:";
+  const char * const short_options = "hS:fb:B:I:i:T:L:M:O";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
@@ -57,6 +58,7 @@ int main(int argc, char *argv[]) {
     { "improve-max" , required_argument, 0, 'M'},
     { "max-time"    , required_argument, 0, 'T'},
     { "log-interval", required_argument, 0, 'L'},
+    { "obj-in",       no_argument      , 0, 'O'},
     { 0, 0, 0, 0}
   };
 
@@ -71,6 +73,7 @@ int main(int argc, char *argv[]) {
   unsigned improvement_runs_max = 100000;
   unsigned log_interval = 60;
   int max_time = 0;
+  bool obj_in = false;
 
   while (1) {
     int option_index = 0;
@@ -116,6 +119,10 @@ int main(int argc, char *argv[]) {
 
       case 'L':
         log_interval = atol(optarg);
+        break;
+
+      case 'O':
+        obj_in = true;
         break;
 
       default:
@@ -166,19 +173,26 @@ int main(int argc, char *argv[]) {
   std::cout << "random_seed: " << seed << std::endl << std::flush;
   random_engine.seed(seed);
 
-  DECL decl( load_vertices(*in) );
-  initial_to_beat = initial_to_beat ? initial_to_beat : decl.get_num_faces();
+  std::unique_ptr<DECL> decl;
+  if (obj_in) {
+    auto [vl, el] = load_obj(*in);
+    decl = std::make_unique<DECL>( std::move(vl), &el );
+    el.clear();
+  } else {
+    decl = std::make_unique<DECL>( load_vertices(*in) );
+  }
+  initial_to_beat = initial_to_beat ? initial_to_beat : decl->get_num_faces();
   unsigned to_beat = initial_to_beat;
   while (1) {
-    decl.assert_valid();
-    decl.find_convex_decomposition();
-    decl.assert_valid();
+    decl->assert_valid();
+    decl->find_convex_decomposition();
+    decl->assert_valid();
 
     ++num_iters;
     ++num_iters_since_improved;
 
     auto now = std::chrono::system_clock::now();
-    unsigned this_num_faces = decl.get_num_faces();
+    unsigned this_num_faces = decl->get_num_faces();
 
     if (this_num_faces < to_beat) {
       have_solution = true;
@@ -218,12 +232,12 @@ int main(int argc, char *argv[]) {
   }
 
   DBG(DBG_GENERIC) << "Random seed was" << seed;
-  std::cout << "num_cvx_areas: " << decl.get_num_faces() << std::endl;
+  std::cout << "num_cvx_areas: " << decl->get_num_faces() << std::endl;
   std::cout << "num_iters: " << num_iters << std::endl;
   auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - solution_found_at);
   std::cout << "time_since_found: " << milliseconds.count()/1000. << std::endl;
   milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time);
   std::cout << "run_time: " << milliseconds.count()/1000. << std::endl;
-  decl.write_obj_segments(full_obj, *out);
+  decl->write_obj_segments(full_obj, *out);
   return 0;
 }

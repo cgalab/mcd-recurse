@@ -116,3 +116,15 @@ my_malloc_c(size_t size) {
 /** compiler hints */
 #define LIKELY(condition) __builtin_expect(static_cast<bool>(condition), 1)
 #define UNLIKELY(condition) __builtin_expect(static_cast<bool>(condition), 0)
+
+
+/** Return a pair in sorted order */
+inline
+std::pair<unsigned,unsigned>
+sorted_pair(unsigned u, unsigned v) {
+  if (u < v) {
+    return std::make_pair(u, v);
+  } else {
+    return std::make_pair(v, u);
+  }
+}
