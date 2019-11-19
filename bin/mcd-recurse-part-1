@@ -245,8 +245,8 @@ class McdPartition:
 
             cmd = []
             if self.args.sge is not None:
-                p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d-stdout.obj'%(i,))
-                p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d-stderr.obj'%(i,))
+                p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stdout'%(i,))
+                p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stderr'%(i,))
                 cmd += ['qsub', '-sync', 'y', '-N', self.generator, '-t', '1', '-q', self.args.sge, '-e', p['stderr_fn'], '-o', p['stdout_fn'], '-b', 'y']
             cmd += [self.args.solver]
             cmd += ['--improve', '0']
@@ -288,23 +288,35 @@ class McdPartition:
                     p['stdout'] = open(p['stdout_fn'], "rt").read()
 
     @staticmethod
-    def coalesce_outputs(outputs):
+    def parse_output(o):
         res = {}
-        res['run_time'] = 0.0
-        res['total_child_iters'] = 0
+        for line in o.splitlines():
+            line = line.rstrip()
+            a = line.split(':', 1)
+            if len(a) <= 1: continue
+            key, value = a
+            if key == 'version':
+                assert('version' not in res or res['version'] == value)
+                res['version'] = value
+            elif key == 'run_time': res[key] = float(value)
+            elif key == 'num_iters': res[key] = int(value)
+            elif key == 'num_cvx_areas': res[key] = int(value)
+        return res
+
+    @staticmethod
+    def coalesce_outputs(initial_split_output, outputs):
+        res = McdPartition.parse_output(initial_split_output)
+        res['num_split_iters'] = res['num_iters']
         res['num_cvx_areas'] = 0
+        res['num_child_iters'] = 0
+        del res['num_iters']
         for o in outputs:
-            for line in o.splitlines():
-                line = line.rstrip()
-                a = line.split(':', 1)
-                if len(a) <= 1: continue
-                key, value = a
+            for key, value in McdPartition.parse_output(o).items():
                 if key == 'version':
-                    assert('version' not in res or res['version'] == value)
-                    res['version'] = value
-                elif key == 'run_time': res['run_time'] += float(value)
-                elif key == 'num_iters': res['total_child_iters'] += int(value)
-                elif key == 'num_cvx_areas': res['num_cvx_areas'] += int(value)
+                    assert(res['version'] == value)
+                elif key == 'num_iters': res['num_child_iters'] += value
+                elif key in ('run_time', 'num_cvx_areas'):
+                  res[key] += value
         return res
 
     def join_objs(self, subproblems):
@@ -328,7 +340,7 @@ class McdPartition:
 
         subproblems = self.setup_subproblems(vertices, buckets)
         self.run_subproblems(subproblems)
-        metadata = self.coalesce_outputs([get_faces_output] + [p['stdout'] for p in subproblems])
+        metadata = self.coalesce_outputs(get_faces_output, [p['stdout'] for p in subproblems])
         metadata['splits'] = len(buckets)
         edges = self.join_objs(subproblems)
         with open(self.args.output_obj, "wt") as f:
