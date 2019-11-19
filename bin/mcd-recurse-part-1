@@ -281,7 +281,11 @@ class McdPartition:
     def run_subproblems(self, subproblems):
         from multiprocessing import Pool
         outputs = []
-        with Pool() as pool:
+        if self.args.sge is not None:
+            processes = len(subproblems)
+        else:
+            processes = None # use default
+        with Pool(processes=processes) as pool:
             for i,o in enumerate(pool.imap_unordered(self.run_subproblem, subproblems)):
                 p = subproblems[i]
                 p['stdout'] = o.decode()
