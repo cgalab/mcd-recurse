@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Set
 from abc import abstractmethod
 
 import argparse
+import collections
 import datetime
 import fcntl
 import json
@@ -26,7 +27,49 @@ def L(*args, sep=' '):
 import cgs
 from cgs.tools import *
 
+class Face:
+    def __init__(self, vertices):
+        self._vertices = vertices
+        self._neighbors = []
+        self._collected = False
+        self._initial_region = None
+        self._initial_bucket = None
+
+    def __iter__(self):
+        return self._vertices.__iter__()
+
+    def __repr__(self):
+        return "<Face>"
+
+    def add_buddy(self, face):
+        self._neighbors.append(face)
+
+    def neighbors(self):
+        return self._neighbors
+
+
+    def set_initial_region(self, i):
+        self._initial_region = i
+
+    def get_initial_region(self):
+        return self._initial_region
+
+
+    def set_collected(self):
+        self._collected = True
+
+    def is_collected(self):
+        return self._collected
+
+    def set_initial_bucket(self, i):
+        self._initial_bucket = i
+
+    def get_initial_bucket(self):
+        return self._initial_bucket
+
 class McdPartition:
+    MIN_BUCKET_SIZE = 100
+
     def __init__(self, generator: str = os.path.basename(sys.argv[0])):
         """
         Initialize and then run this tool.
@@ -69,8 +112,19 @@ class McdPartition:
                     line = line.rstrip()
                     parts = line.split()
                     parts.pop(0)
-                    faces.append([int(p)-1 for p in parts])
+                    faces.append(Face([int(p)-1 for p in parts]))
         return (vertices, faces)
+
+    def join_up_faces(self, faces):
+        edges = {}
+        for face in faces:
+            for e in cyclic_pair_iterator(face):
+                edges[e] = face
+
+        for face in faces:
+            for e in cyclic_pair_iterator(face):
+                e = tuple(reversed(e))
+                face.add_buddy(edges.get(e, None))
 
     def build_commandline_for_faceobj(self, in_obj_fn, out_fn):
         cmd = [self.args.solver]
@@ -94,6 +148,7 @@ class McdPartition:
         o = subprocess.check_output(cmd, stdin=None, shell=False)
         o = o.decode()
         face_obj = self.parse_obj_faces(faces_fn)
+        self.join_up_faces(face_obj[1])
         return (o, *face_obj)
 
     @staticmethod
@@ -116,7 +171,6 @@ class McdPartition:
         x_step = (xmax-xmin) / self.args.split
         y_step = (ymax-ymin) / self.args.split
 
-        buckets = [[] for x in range(self.args.split**2)]
         for f in faces:
             x = min([vertices[vidx][0] for vidx in f])
             y = min([vertices[vidx][1] for vidx in f])
@@ -126,7 +180,46 @@ class McdPartition:
             assert(0 <= xi < self.args.split)
             assert(0 <= yi < self.args.split)
             idx = yi * self.args.split + xi
-            buckets[idx].append(f)
+            f.set_initial_region(idx)
+
+        initial_buckets = []
+        for face in faces:
+            bucket = []
+            if face.is_collected(): continue
+            todo = collections.deque()
+            todo.append(face)
+            face.set_collected()
+            while len(todo) > 0:
+                f = todo.popleft()
+                bucket.append(f)
+                f.set_initial_bucket(len(initial_buckets))
+
+                for n in f.neighbors():
+                    if n is None: continue
+                    if n.is_collected(): continue
+                    if n.get_initial_region() != face.get_initial_region(): continue
+                    todo.append(n)
+                    n.set_collected()
+
+            initial_buckets.append(bucket)
+
+        for b in initial_buckets:
+            if len(b) < self.MIN_BUCKET_SIZE:
+                logging.info(L("Small bucket found with just", len(b), "faces.  Merging into neighbor"))
+
+                target = None
+                for face in b:
+                    for n in face.neighbors():
+                        if n.get_initial_bucket() != face.get_initial_bucket():
+                            target = n.get_initial_bucket()
+                            break
+                    if target is not None: break
+                if target is None: raise ("Did not find a neighboring bucket")
+                for face in b:
+                    face.set_initial_bucket(target)
+                initial_buckets[target] += b
+                b.clear()
+        buckets = [b for b in initial_buckets if len(b) > 0]
         return buckets
 
     def setup_subproblems(self, vertices, buckets):
@@ -281,8 +374,9 @@ class McdPartition:
             self.temp_dir = tempfile.mkdtemp(prefix=prefix)
             self.run()
         finally:
-            if self.temp_dir is not None:
-                shutil.rmtree(self.temp_dir)
+            pass
+            #if self.temp_dir is not None:
+            #    shutil.rmtree(self.temp_dir)
 
 
 if __name__ == "__main__":
