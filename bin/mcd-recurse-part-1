@@ -210,6 +210,7 @@ class McdPartition:
                 target = None
                 for face in b:
                     for n in face.neighbors():
+                        if n is None: continue
                         if n.get_initial_bucket() != face.get_initial_bucket():
                             target = n.get_initial_bucket()
                             break
