@@ -245,10 +245,14 @@ class McdPartition:
                 raise Exception("Prepared input is not simple!")
 
             cmd = []
+            first = True
             if self.args.sge is not None:
-                p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stdout'%(i,))
-                p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stderr'%(i,))
-                cmd += ['qsub', '-sync', 'y', '-N', self.generator, '-t', '1', '-q', self.args.sge, '-e', p['stderr_fn'], '-o', p['stdout_fn'], '-b', 'y']
+                if self.args.sge_first_local and not first:
+                    p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stdout'%(i,))
+                    p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stderr'%(i,))
+                    cmd += ['qsub', '-sync', 'y', '-N', self.generator, '-t', '1', '-q', self.args.sge, '-e', p['stderr_fn'], '-o', p['stdout_fn'], '-b', 'y']
+                first = False
+
             cmd += [self.args.solver]
             cmd += ['--improve', '0']
             cmd += ['--improve-time', str(self.args.max_child_time)]
@@ -372,6 +376,7 @@ class McdPartition:
 
         parser.add_argument("--verbose", dest="verbose", action="store_true", default=False, help='verbose')
         parser.add_argument('--sge', dest='sge', type=str, help='run childs via gridengine queue')
+        parser.add_argument('--sge-first-local', dest='sge_first_local', action='store_true', default=False, help='run one child locally')
 
         parser.add_argument('--max-child-time', dest='max_child_time', type=int, default=1800, help='how long to work on each child')
         parser.add_argument('--split', dest='split', type=int, default=2, help='how many splits per dimension')
