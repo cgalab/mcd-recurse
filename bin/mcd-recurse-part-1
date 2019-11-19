@@ -270,9 +270,12 @@ class McdPartition:
 
 
     @staticmethod
-    def run_subproblem(p):
+    def run_subproblem(args):
+        wait_after, p = args
         try:
             o = subprocess.check_output(p['cmd'], stdin=None, shell=False)
+            if wait_after:
+                time.sleep(30) # for NFS to sync, because reasons
             return o
         except subprocess.CalledProcessError as e:
             if 'stderr_fn' in p:
@@ -290,7 +293,9 @@ class McdPartition:
         else:
             processes = None # use default
         with Pool(processes=processes) as pool:
-            for i,o in enumerate(pool.imap_unordered(self.run_subproblem, subproblems)):
+            wait_after = (self.args.sge is not None)
+            args = [(wait_after, p) for p in subproblems]
+            for i,o in enumerate(pool.imap_unordered(self.run_subproblem, args)):
                 p = subproblems[i]
                 p['stdout'] = o.decode()
                 if 'stdout_fn' in p:
