@@ -215,7 +215,7 @@ class McdPartition:
                             target = n.get_initial_bucket()
                             break
                     if target is not None: break
-                if target is None: raise ("Did not find a neighboring bucket")
+                if target is None: raise Exception("Did not find a neighboring bucket")
                 for face in b:
                     face.set_initial_bucket(target)
                 initial_buckets[target] += b
