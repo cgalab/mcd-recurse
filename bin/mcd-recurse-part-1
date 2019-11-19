@@ -380,9 +380,8 @@ class McdPartition:
             self.temp_dir = tempfile.mkdtemp(prefix=prefix)
             self.run()
         finally:
-            pass
-            #if self.temp_dir is not None:
-            #    shutil.rmtree(self.temp_dir)
+            if self.temp_dir is not None:
+                shutil.rmtree(self.temp_dir)
 
 
 if __name__ == "__main__":
