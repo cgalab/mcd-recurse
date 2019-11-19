@@ -738,7 +738,7 @@ DECL::
 write_obj_segments(bool dump_vertices, bool face_based, std::ostream &o) {
   if (dump_vertices) {
     for (const auto &v : all_vertices) {
-      o << "v " << v.x << " " << v.y << " 0" << std::endl;
+      o << "v " << std::setprecision(15) << v.x << " " << v.y << " 0" << std::endl;
     }
   }
   if (face_based) {
