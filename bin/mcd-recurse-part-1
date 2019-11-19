@@ -225,6 +225,7 @@ class McdPartition:
 
     def setup_subproblems(self, vertices, buckets):
         subproblems = []
+        first_subproblem = True
         for i, b in enumerate(buckets):
             p = {}
 
@@ -245,13 +246,12 @@ class McdPartition:
                 raise Exception("Prepared input is not simple!")
 
             cmd = []
-            first = True
             if self.args.sge is not None:
-                if self.args.sge_first_local and not first:
+                if not self.args.sge_first_local or not first_subproblem:
                     p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stdout'%(i,))
                     p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stderr'%(i,))
                     cmd += ['qsub', '-sync', 'y', '-N', self.generator, '-t', '1', '-q', self.args.sge, '-e', p['stderr_fn'], '-o', p['stdout_fn'], '-b', 'y']
-                first = False
+                first_subproblem = False
 
             cmd += [self.args.solver]
             cmd += ['--improve', '0']
