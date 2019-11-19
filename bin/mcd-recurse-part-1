@@ -230,6 +230,7 @@ class McdPartition:
             p['in'] = os.path.join(self.temp_dir, 'subproblem-%03d-in.obj'%(i,))
             p['out'] = os.path.join(self.temp_dir, 'subproblem-%03d-out.obj'%(i,))
             idxmap = {}
+            edgeset = set()
             with open(p['in'], "wt") as f:
                 for face in b:
                     for e in cyclic_pair_iterator(face):
@@ -238,6 +239,9 @@ class McdPartition:
                             print("v", vertices[v][0], vertices[v][1], 0, file=f)
                             idxmap[v] = len(idxmap) + 1
                         print("l", idxmap[e[0]], idxmap[e[1]], file=f)
+                        edgeset.add(tuple(sorted(e)))
+            if (len(idxmap) - len(edgeset) + len(b) != 1):
+                raise Exception("Prepared input is not simple!")
 
             cmd = []
             if self.args.sge is not None:
