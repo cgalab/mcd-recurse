@@ -248,9 +248,10 @@ class McdPartition:
             cmd = []
             if self.args.sge is not None:
                 if not self.args.sge_first_local or not first_subproblem:
-                    p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stdout'%(i,))
-                    p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stderr'%(i,))
-                    cmd += ['qsub', '-sync', 'y', '-N', self.generator, '-t', '1', '-q', self.args.sge, '-e', p['stderr_fn'], '-o', p['stdout_fn'], '-b', 'y']
+                    #p['stdout_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stdout'%(i,))
+                    #p['stderr_fn'] = os.path.join(self.temp_dir, 'subproblem-%03d.stderr'%(i,))
+                    #cmd += ['qsub', '-sync', 'y', '-N', self.generator, '-t', '1', '-q', self.args.sge, '-e', p['stderr_fn'], '-o', p['stdout_fn'], '-b', 'y']
+                    cmd += ['/opt/gridengine/bin/linux-x64/qrsh', '-now', 'no', '-N', self.generator, '-q', self.args.sge, '-b', 'y']
                 first_subproblem = False
 
             cmd += [self.args.solver]
