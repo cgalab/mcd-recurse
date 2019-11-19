@@ -117,6 +117,10 @@ decl_triangulate_process(VertexList& vertices, const struct triangulateio& tout,
   edges.reserve(num_halfedges);
   interior_edges.reserve(num_halfedges - 3);
   Edge * edge_end = edges.data();
+  if (num_halfedges < int(num_t*3)) {
+    LOG(ERROR) << "Computed number of halfedges will not suffice.  Is the input simple?";
+    exit(1);
+  }
   int *tptr = tout.trianglelist;
   int *nptr = tout.neighborlist;
   int edges_on_ch = 0;
