@@ -396,10 +396,10 @@ class McdPartition:
             s.add_edges([cgs.Edge(*e) for e in edges])
             s.submit()
 
-            self.db._cgs.worklog(pointset_id = metadata['parent-id'],
+            self.db._cgs.worklog(pointset_id = metadata['instance-id'],
                                  generator = self.generator,
                                  info = info,
-                                 seconds = float(res['run_time']),
+                                 seconds = int(res['run_time']),
                                  )
 
 
