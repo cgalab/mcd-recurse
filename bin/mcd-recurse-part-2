@@ -255,6 +255,8 @@ class McdPartition:
                 p['stdout_fn_redir'] = os.path.abspath(os.path.join(self.args.out_dir, 'subproblem-%03d.stdout'%(i,)))
 
             cmd += [self.args.solver]
+            if self.args.start_hole_at_higher_degree_vertex_probability is not None:
+                cmd += ['--start_hole_at_higher_degree_vertex_probability', str(self.args.start_hole_at_higher_degree_vertex_probability)]
             cmd += ['--improve', '0']
             cmd += ['--improve-time', str(self.args.max_child_time)]
             cmd += ['--max-time', str(self.args.max_child_time)]
@@ -272,6 +274,7 @@ class McdPartition:
     def write_subproblems(self, get_faces_output, subproblems):
         script_fn = os.path.join(self.args.out_dir, 'run.sh')
         data_fn = os.path.join(self.args.out_dir, 'metadata.json')
+        data_short_fn = os.path.join(self.args.out_dir, 'metashort.json')
 
         with open(script_fn, "wt") as f:
             for p in subproblems:
@@ -284,9 +287,17 @@ class McdPartition:
         metadata['instance-id'] = self.args.instance_id
         metadata['parent-id'] = self.args.parent_id
         metadata['get_faces_output'] = get_faces_output
+        metadata['params'] = {}
+        if self.args.start_hole_at_higher_degree_vertex_probability is not None:
+            metadata['params']['start_hole_at_higher_degree_vertex_probability'] = self.args.start_hole_at_higher_degree_vertex_probability
         metadata['subproblems'] = subproblems
         with open(data_fn, 'wt') as f:
             json.dump(metadata, f)
+        with open(data_short_fn, 'wt') as f:
+            m = {}
+            for k in ('instance-id', 'parent-id', 'params'):
+                    m[k] = metadata[k]
+            json.dump(m, f)
 
     def load_metadata(self):
         metadata_fn = os.path.join(self.args.in_dir, 'metadata.json')
@@ -375,6 +386,8 @@ class McdPartition:
 
         res = self.coalesce_outputs(metadata['get_faces_output'], [p['stdout'] for p in subproblems])
         res['splits'] = len(subproblems)
+        if 'params' in metadata:
+            res['params'] = metadata['params']
         edges = self.join_objs(subproblems)
         with open(self.args.output_obj, "wt") as f:
             for e in edges:
@@ -382,6 +395,9 @@ class McdPartition:
         for k, v in res.items():
             print("%s:"%(k,), v)
             logging.info(L("%s:"%(k,), v))
+        for k in ('instance-id', 'parent-id'):
+            print("%s:"%(k,), metadata[k])
+            logging.info(L("%s:"%(k,), metadata[k]))
 
         if not self.args.no_upload:
             self.db = cgs.InstanceDatabase(
@@ -427,6 +443,7 @@ class McdPartition:
 
         subparser.add_argument('--max-child-time', dest='max_child_time', type=int, default=1800, help='how long to work on each child')
         subparser.add_argument('--split', dest='split', type=int, default=2, help='how many splits per dimension')
+        subparser.add_argument('--start_hole_at_higher_degree_vertex_probability', dest='start_hole_at_higher_degree_vertex_probability', type=float)
 
         subparser.add_argument('solver', type=str)
         subparser.add_argument('input_obj')
