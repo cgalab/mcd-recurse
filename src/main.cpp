@@ -13,6 +13,9 @@ INITIALIZE_EASYLOGGINGPP
 unsigned DBG_INDENT_CTR = 0;
 std::default_random_engine random_engine;
 bool main_loop_interrupted = false;
+const unsigned DECL::default_hole_size_base = 7;
+const double DECL::default_hole_size_geometric_param = 0.4; /* Less means larger holes */
+const double DECL::default_flip_nums_exponent = 1./5;
 const double DECL::default_start_hole_at_higher_degree_vertex_probability = 0.75;
 
 /*seconds*/
@@ -45,7 +48,10 @@ usage(const char *progname, int err) {
     << "    --max-time NUM         Do not start a new run after NUM seconds (overrides improve-* bounds)" << std::endl
     << "    --log-interval SECONDS Report on state regularly." << std::endl
     << "    --obj-in               Input is an obj file, potentially with already segments/faces to improve" << std::endl
-    << "    --start_hole_at_higher_degree_vertex_probability (default: " << DECL::default_start_hole_at_higher_degree_vertex_probability << ")" << std::endl
+    << "    --hole_size_base"                                  " (default: " << DECL::default_hole_size_base << ")" << std::endl
+    << "    --hole_size_geometric_param"                       " (default: " << DECL::default_hole_size_geometric_param << ")" << std::endl
+    << "    --flip_nums_exponent"                              " (default: " << DECL::default_flip_nums_exponent << ")" << std::endl
+    << "    --start_hole_at_higher_degree_vertex_probability"  " (default: " << DECL::default_start_hole_at_higher_degree_vertex_probability << ")" << std::endl
   ;
   exit(err);
 }
@@ -72,7 +78,10 @@ int main(int argc, char *argv[]) {
     { "max-time"    , required_argument, 0, 'T'},
     { "log-interval", required_argument, 0, 'L'},
     { "obj-in",       no_argument      , 0, 'O'},
-    { "start_hole_at_higher_degree_vertex_probability", required_argument, 0, 'H'},
+    { "hole_size_base", required_argument, 0, '1'},
+    { "hole_size_geometric_param", required_argument, 0, '2'},
+    { "flip_nums_exponent", required_argument, 0, '3'},
+    { "start_hole_at_higher_degree_vertex_probability", required_argument, 0, '4'},
     { 0, 0, 0, 0}
   };
 
@@ -89,6 +98,10 @@ int main(int argc, char *argv[]) {
   unsigned log_interval = 60;
   int max_time = 0;
   bool obj_in = false;
+
+  unsigned hole_size_base = DECL::default_hole_size_base;;
+  double hole_size_geometric_param = DECL::default_hole_size_geometric_param;
+  double flip_nums_exponent = DECL::default_flip_nums_exponent;
   double start_hole_at_higher_degree_vertex_probability = DECL::default_start_hole_at_higher_degree_vertex_probability;
 
   while (1) {
@@ -145,7 +158,16 @@ int main(int argc, char *argv[]) {
         obj_in = true;
         break;
 
-      case 'H':
+      case '1':
+        hole_size_base = atol(optarg);
+        break;
+      case '2':
+        hole_size_geometric_param = std::stod(optarg);
+        break;
+      case '3':
+        flip_nums_exponent = std::stod(optarg);
+        break;
+      case '4':
         start_hole_at_higher_degree_vertex_probability = std::stod(optarg);
         break;
 
@@ -204,9 +226,20 @@ int main(int argc, char *argv[]) {
   std::unique_ptr<DECL> decl;
   if (obj_in) {
     std::pair<VertexList, InputEdgeSet> p = load_obj(*in);
-    decl = std::make_unique<DECL>( std::move(p.first), &p.second, start_hole_at_higher_degree_vertex_probability );
+    decl = std::make_unique<DECL>(
+      std::move(p.first),
+      &p.second,
+      hole_size_base,
+      hole_size_geometric_param,
+      flip_nums_exponent,
+      start_hole_at_higher_degree_vertex_probability );
   } else {
-    decl = std::make_unique<DECL>( load_vertices(*in), start_hole_at_higher_degree_vertex_probability );
+    decl = std::make_unique<DECL>(
+      load_vertices(*in),
+      hole_size_base,
+      hole_size_geometric_param,
+      flip_nums_exponent,
+      start_hole_at_higher_degree_vertex_probability );
   }
   initial_to_beat = initial_to_beat ? initial_to_beat : decl->get_num_faces();
   unsigned to_beat = initial_to_beat;

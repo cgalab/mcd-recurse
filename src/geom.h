@@ -511,7 +511,13 @@ class DECL {
 
   private:
     /* private constructor to make the public one use decl_triangulate's result. */
-    DECL(VertexList&& vertices, TriangulateResult&& triangulation_result, bool initial_constrained_, double start_hole_at_higher_degree_vertex_probability_);
+    DECL(VertexList&& vertices,
+         TriangulateResult&& triangulation_result,
+         bool initial_constrained_,
+         unsigned hole_size_base_,
+         double hole_size_geometric_param_,
+         double flip_nums_exponent_,
+         double start_hole_at_higher_degree_vertex_probability_);
 
     /* optimization in punched hole */
     void find_convex_decomposition_many(unsigned num_iterations);
@@ -520,21 +526,43 @@ class DECL {
 
   /* public interface */
   public:
-    const unsigned hole_size_base = 7;
-    const double hole_size_geometric_param = 0.4; /* Less means larger holes */
-    const double flip_nums_exponent = 1./5;
+    const unsigned hole_size_base;
+    const double hole_size_geometric_param; /* Less means larger holes */
+    const double flip_nums_exponent;
     const double start_hole_at_higher_degree_vertex_probability;
+
+    static const unsigned default_hole_size_base;
+    static const double default_hole_size_geometric_param;
+    static const double default_flip_nums_exponent;
     static const double default_start_hole_at_higher_degree_vertex_probability;
 
     /** Initialize the DECL with the vertices and a triangulation of their CH */
-    DECL(VertexList&& vertices, double start_hole_at_higher_degree_vertex_probability_ = default_start_hole_at_higher_degree_vertex_probability)
-    : DECL(std::forward<VertexList>(vertices), decl_triangulate(vertices), false, start_hole_at_higher_degree_vertex_probability_)
+    DECL(VertexList&& vertices,
+      unsigned hole_size_base_ = default_hole_size_base,
+      double hole_size_geometric_param_ = default_hole_size_geometric_param,
+      double flip_nums_exponent_ = default_flip_nums_exponent,
+      double start_hole_at_higher_degree_vertex_probability_ = default_start_hole_at_higher_degree_vertex_probability)
+      : DECL(std::forward<VertexList>(vertices),
+             decl_triangulate(vertices),
+             false,
+             hole_size_base_,
+             hole_size_geometric_param_,
+             flip_nums_exponent_,
+             start_hole_at_higher_degree_vertex_probability_)
     {}
 
-    DECL(VertexList&& vertices, const InputEdgeSet* edges, double start_hole_at_higher_degree_vertex_probability_ = default_start_hole_at_higher_degree_vertex_probability)
+    DECL(VertexList&& vertices,
+      const InputEdgeSet* edges,
+      unsigned hole_size_base_ = default_hole_size_base,
+      double hole_size_geometric_param_ = default_hole_size_geometric_param,
+      double flip_nums_exponent_ = default_flip_nums_exponent,
+      double start_hole_at_higher_degree_vertex_probability_ = default_start_hole_at_higher_degree_vertex_probability)
     : DECL(std::forward<VertexList>(vertices),
            decl_triangulate(vertices, edges),
            true,
+           hole_size_base_,
+           hole_size_geometric_param_,
+           flip_nums_exponent_,
            start_hole_at_higher_degree_vertex_probability_)
     {}
 

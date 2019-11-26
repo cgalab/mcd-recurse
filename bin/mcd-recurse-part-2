@@ -255,6 +255,12 @@ class McdPartition:
                 p['stdout_fn_redir'] = os.path.abspath(os.path.join(self.args.out_dir, 'subproblem-%03d.stdout'%(i,)))
 
             cmd += [self.args.solver]
+            if self.args.hole_size_base is not None:
+                cmd += ['--hole_size_base', str(self.args.hole_size_base)]
+            if self.args.hole_size_geometric_param is not None:
+                cmd += ['--hole_size_geometric_param', str(self.args.hole_size_geometric_param)]
+            if self.args.flip_nums_exponent is not None:
+                cmd += ['--flip_nums_exponent', str(self.args.flip_nums_exponent)]
             if self.args.start_hole_at_higher_degree_vertex_probability is not None:
                 cmd += ['--start_hole_at_higher_degree_vertex_probability', str(self.args.start_hole_at_higher_degree_vertex_probability)]
             cmd += ['--improve', '0']
@@ -288,6 +294,12 @@ class McdPartition:
         metadata['parent-id'] = self.args.parent_id
         metadata['get_faces_output'] = get_faces_output
         metadata['params'] = {}
+        if self.args.hole_size_base is not None:
+            metadata['params']['hole_size_base'] = self.args.hole_size_base
+        if self.args.hole_size_geometric_param is not None:
+            metadata['params']['hole_size_geometric_param'] = self.args.hole_size_geometric_param
+        if self.args.flip_nums_exponent is not None:
+            metadata['params']['flip_nums_exponent'] = self.args.flip_nums_exponent
         if self.args.start_hole_at_higher_degree_vertex_probability is not None:
             metadata['params']['start_hole_at_higher_degree_vertex_probability'] = self.args.start_hole_at_higher_degree_vertex_probability
         metadata['subproblems'] = subproblems
@@ -443,6 +455,9 @@ class McdPartition:
 
         subparser.add_argument('--max-child-time', dest='max_child_time', type=int, default=1800, help='how long to work on each child')
         subparser.add_argument('--split', dest='split', type=int, default=2, help='how many splits per dimension')
+        subparser.add_argument('--hole_size_base', dest='hole_size_base', type=int)
+        subparser.add_argument('--hole_size_geometric_param', dest='hole_size_geometric_param', type=float)
+        subparser.add_argument('--flip_nums_exponent', dest='flip_nums_exponent', type=float)
         subparser.add_argument('--start_hole_at_higher_degree_vertex_probability', dest='start_hole_at_higher_degree_vertex_probability', type=float)
 
         subparser.add_argument('solver', type=str)
