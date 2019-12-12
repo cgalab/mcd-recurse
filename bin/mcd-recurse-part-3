@@ -169,8 +169,8 @@ class McdPartition:
         ymin = min([v[1] for v in vertices])
         ymax = max([v[1] for v in vertices])
 
-        x_steps = [random.uniform(xmin, xmax) for i in range(self.args.split-1)] + [xmax]
-        y_steps = [random.uniform(ymin, ymax) for i in range(self.args.split-1)] + [ymax]
+        x_steps = sorted([random.uniform(xmin, xmax) for i in range(self.args.split-1)] + [xmax])
+        y_steps = sorted([random.uniform(ymin, ymax) for i in range(self.args.split-1)] + [ymax])
 
         for f in faces:
             x = min([vertices[vidx][0] for vidx in f])
