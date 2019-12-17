@@ -17,6 +17,7 @@ const unsigned DECL::default_hole_size_base = 7;
 const double DECL::default_hole_size_geometric_param = 0.4; /* Less means larger holes */
 const double DECL::default_flip_nums_exponent = 1./5;
 const double DECL::default_start_hole_at_higher_degree_vertex_probability = 0.75;
+const double DECL::default_num_iterations_exponent = 1.;
 
 /*seconds*/
 
@@ -52,6 +53,12 @@ usage(const char *progname, int err) {
     << "    --hole_size_geometric_param"                       " (default: " << DECL::default_hole_size_geometric_param << ")" << std::endl
     << "    --flip_nums_exponent"                              " (default: " << DECL::default_flip_nums_exponent << ")" << std::endl
     << "    --start_hole_at_higher_degree_vertex_probability"  " (default: " << DECL::default_start_hole_at_higher_degree_vertex_probability << ")" << std::endl
+    << "    --num_iterations_exponent"                         " (default: " << DECL::default_num_iterations_exponent << ")" << std::endl
+    << std::endl
+    << "hole_size_base x: Initial hole size" << std::endl
+    << "hole_size_geometric_param x: We keep increasing the hole until uniform [0-1) distribution draws a value < x.  So smaller x means larger holes" << std::endl
+    << "start_hole_at_higher_degree_vertex_probability: Probability (out of uniform distribution) to start the hole shooting process at a higher degree vertex." << std::endl
+    << "num_iterations_exponent x: per hole shooting, we do |E|^x many iterations, where |E| is the number of interior edges." << std::endl
   ;
   exit(err);
 }
@@ -82,6 +89,7 @@ int main(int argc, char *argv[]) {
     { "hole_size_geometric_param", required_argument, 0, '2'},
     { "flip_nums_exponent", required_argument, 0, '3'},
     { "start_hole_at_higher_degree_vertex_probability", required_argument, 0, '4'},
+    { "num_iterations_exponent", required_argument, 0, '4'},
     { 0, 0, 0, 0}
   };
 
@@ -103,6 +111,7 @@ int main(int argc, char *argv[]) {
   double hole_size_geometric_param = DECL::default_hole_size_geometric_param;
   double flip_nums_exponent = DECL::default_flip_nums_exponent;
   double start_hole_at_higher_degree_vertex_probability = DECL::default_start_hole_at_higher_degree_vertex_probability;
+  double num_iterations_exponent = DECL::default_num_iterations_exponent;
 
   while (1) {
     int option_index = 0;
@@ -170,6 +179,9 @@ int main(int argc, char *argv[]) {
       case '4':
         start_hole_at_higher_degree_vertex_probability = std::stod(optarg);
         break;
+      case '5':
+        num_iterations_exponent = std::stod(optarg);
+        break;
 
       default:
         std::cerr << "Invalid option " << (char)r << std::endl;
@@ -232,14 +244,16 @@ int main(int argc, char *argv[]) {
       hole_size_base,
       hole_size_geometric_param,
       flip_nums_exponent,
-      start_hole_at_higher_degree_vertex_probability );
+      start_hole_at_higher_degree_vertex_probability,
+      num_iterations_exponent);
   } else {
     decl = std::make_unique<DECL>(
       load_vertices(*in),
       hole_size_base,
       hole_size_geometric_param,
       flip_nums_exponent,
-      start_hole_at_higher_degree_vertex_probability );
+      start_hole_at_higher_degree_vertex_probability,
+      num_iterations_exponent);
   }
   initial_to_beat = initial_to_beat ? initial_to_beat : decl->get_num_faces();
   unsigned to_beat = initial_to_beat;

@@ -47,7 +47,8 @@ DECL(VertexList&& vertices,
      unsigned hole_size_base_,
      double hole_size_geometric_param_,
      double flip_nums_exponent_,
-     double start_hole_at_higher_degree_vertex_probability_)
+     double start_hole_at_higher_degree_vertex_probability_,
+     double num_iterations_exponent_)
   : initial_constrained(initial_constrained_)
   , all_vertices(std::move(vertices))
   , all_edges(std::move(triangulation_result.all_edges))
@@ -55,11 +56,13 @@ DECL(VertexList&& vertices,
   , hole_size_geometric_param(hole_size_geometric_param_)
   , flip_nums_exponent(start_hole_at_higher_degree_vertex_probability_)
   , start_hole_at_higher_degree_vertex_probability(start_hole_at_higher_degree_vertex_probability_)
+  , num_iterations_exponent(num_iterations_exponent_)
 {
   geometric_distribution = std::geometric_distribution<unsigned>(hole_size_geometric_param);
   std::cout << "hole_size: " << hole_size_base << "+P_geom(i|" << hole_size_geometric_param << ")" << std::endl;
   std::cout << "flip_nums_exponent: " << flip_nums_exponent << std::endl;
   std::cout << "start_hole_at_higher_degree_vertex_probability: " << start_hole_at_higher_degree_vertex_probability << std::endl;
+  std::cout << "num_iterations_exponent: " << num_iterations_exponent << std::endl;
 
   working_set.shuffled_edges = std::move(triangulation_result.interior_edges);
 
@@ -578,7 +581,7 @@ shoot_hole(unsigned select_num_faces) {
     std::swap(working_set, other_workingset);
     for (auto& e : working_set.my_edges) ++e->working_set_depth;
 
-    unsigned num_iterations = working_set.shuffled_edges.size();
+    unsigned num_iterations = std::pow(working_set.shuffled_edges.size(), num_iterations_exponent);
     /* in-place optimization here */
     find_convex_decomposition_many(num_iterations);
 
