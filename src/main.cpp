@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) {
     { "hole_size_geometric_param", required_argument, 0, '2'},
     { "flip_nums_exponent", required_argument, 0, '3'},
     { "start_hole_at_higher_degree_vertex_probability", required_argument, 0, '4'},
-    { "num_iterations_exponent", required_argument, 0, '4'},
+    { "num_iterations_exponent", required_argument, 0, '5'},
     { 0, 0, 0, 0}
   };
 
