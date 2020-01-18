@@ -287,7 +287,7 @@ public:
       const Vertex &v1 = *opposite->v;
       const Vertex &v2 = *next_constrained->opposite->next_constrained->v;
       const Vertex &v3 = *next_constrained->v;
-      if (Vertex::orientation(v0, v1, v3) == 0) {
+      if (Vertex::orientation(v0, v1, v2) == 0) {
         return true;
       };
       if (Vertex::orientation(v0, v2, v3) == 0) {
