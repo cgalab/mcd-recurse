@@ -716,6 +716,17 @@ find_convex_decomposition() {
   if (!initial_constrained && working_set.num_my_triangles == num_faces) {
     flip_random_edges_and_reset_constraints();
     unconstrain_random_edges();
+  } else {
+    for (Edge * const e : working_set.shuffled_edges) {
+      /* Only check one edge of each half-edge-pair */
+      if (e->opposite == NULL) continue;
+      if (e->opposite < e) continue;
+
+      if (!e->is_constrained || ! e->can_unconstrain()) continue;
+      e->unconstrain();
+      --num_faces;
+    }
+    DBG(DBG_UNCONSTRAIN) << "Now have " << num_faces << " faces";
   };
   assert_valid();
   shoot_holes();
