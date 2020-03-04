@@ -76,6 +76,7 @@ usage(const char *progname, int err) {
     << "    --log-interval SECONDS Report on state regularly." << std::endl
     << "    --obj-in               Input is an obj file, potentially with already segments/faces to improve" << std::endl
     << "    --initial-unconstrain-only  Only do an initial unconstrain; no hole shooting; no improvement loops" << std::endl
+    << "    --initial-unconstrain-only-no-flips Also skip random edge flips." << std::endl
     << "    --status-fd <FD>       File-Descriptor number to print statistics to." << std::endl
     << "    --hole_size_base"                                  " (default: " << DECL::default_hole_size_base << ")" << std::endl
     << "    --hole_size_geometric_param"                       " (default: " << DECL::default_hole_size_geometric_param << ")" << std::endl
@@ -115,6 +116,7 @@ int main(int argc, char *argv[]) {
     { "log-interval", required_argument, 0, 'L'},
     { "obj-in",       no_argument      , 0, 'O'},
     { "initial-unconstrain-only", no_argument      , 0, 'H'},
+    { "initial-unconstrain-only-no-flips", no_argument      , 0, '7'},
     { "status-fd"   , required_argument, 0, '8'},
 
     { "hole_size_base", required_argument, 0, '1'},
@@ -140,6 +142,7 @@ int main(int argc, char *argv[]) {
   int max_time = 0;
   bool obj_in = false;
   bool initial_unconstrain_only = false;
+  bool initial_unconstrain_only_no_flips = false;
   int status_fd = -1;
 
   unsigned hole_size_base = DECL::default_hole_size_base;;
@@ -229,6 +232,9 @@ int main(int argc, char *argv[]) {
       case 'H':
         initial_unconstrain_only = true;
         break;
+      case '7':
+        initial_unconstrain_only_no_flips = true;
+        break;
 
       default:
         std::cerr << "Invalid option " << (char)r << std::endl;
@@ -308,8 +314,11 @@ int main(int argc, char *argv[]) {
   initial_to_beat = initial_to_beat ? initial_to_beat : decl->get_num_faces();
   unsigned to_beat = initial_to_beat;
 
-  if (initial_unconstrain_only) {
-    decl->one_initial_unconstrain_only();
+  if (initial_unconstrain_only_no_flips) {
+    decl->one_initial_unconstrain_only(false);
+    std::cout << "exit_reason: initial-unconstrain-only-no-flips" << std::endl;
+  } else if (initial_unconstrain_only) {
+    decl->one_initial_unconstrain_only(true);
     std::cout << "exit_reason: initial-unconstrain-only" << std::endl;
   } else {
     while (1) {
@@ -379,7 +388,10 @@ int main(int argc, char *argv[]) {
      }
 
      fprintf(status, "[STATUS] VERSION: %s\n", GITVERSION);
-     fprintf(status, "[STATUS] GENERATOR: mcd-recurse%s\n", initial_unconstrain_only ? "-init" : "");
+     fprintf(status, "[STATUS] GENERATOR: mcd-recurse%s\n",
+       initial_unconstrain_only_no_flips ? "-init-nf" :
+       initial_unconstrain_only          ? "-init" :
+                                           "");
      fprintf(status, "[STATUS] INPUT_SIZE: %d\n", decl->get_num_vertices());
      fprintf(status, "[STATUS] CPUTIME: %.6lf\n", end_rtime - start_rtime);
      fprintf(status, "[STATUS] WALLTIME: %.9lf\n",

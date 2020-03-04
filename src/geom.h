@@ -580,9 +580,11 @@ class DECL {
 
     void reset_constraints();
     void find_convex_decomposition();
-    void one_initial_unconstrain_only() {
+    void one_initial_unconstrain_only(bool do_flip) {
       if (!initial_constrained && working_set.num_my_triangles == num_faces) {
-        flip_random_edges_and_reset_constraints();
+        if (do_flip) {
+          flip_random_edges_and_reset_constraints();
+        }
         unconstrain_random_edges();
       } else {
         LOG(ERROR) << "Cannot run initial unconstrain while improving existing decompositions";
