@@ -494,6 +494,11 @@ class DECL {
     WorkingSet working_set;
     unsigned num_faces; /** The number of faces of the entire graph right now. */
 
+  public:
+    unsigned get_num_vertices() const {
+      return all_vertices.size();
+    }
+
   /* The state of DECL hole finding */
   private:
     std::vector<Edge*> marked_halfedges;

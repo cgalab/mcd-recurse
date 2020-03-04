@@ -19,6 +19,33 @@ const double DECL::default_flip_nums_exponent = 1./5;
 const double DECL::default_start_hole_at_higher_degree_vertex_probability = 0.75;
 const double DECL::default_num_iterations_exponent = 1.;
 
+/* timing stuff */
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <errno.h>
+
+static double get_current_rtime(void) {
+  struct rusage usage;
+  if (getrusage(RUSAGE_SELF, &usage) < 0) {
+    fprintf(stderr, "getrusage() failed: %s\n", strerror(errno));
+    exit(1);
+  }
+  return usage.ru_utime.tv_sec + (double)usage.ru_utime.tv_usec/1e6;
+}
+
+/* we are too fast for sane use of getrusage.  Also try a wallclock timer */
+typedef std::chrono::high_resolution_clock Clock;
+
+static long get_maxrss(void) {
+  struct rusage usage;
+  if (getrusage(RUSAGE_SELF, &usage) < 0) {
+    fprintf(stderr, "getrusage() failed: %s\n", strerror(errno));
+    exit(1);
+  }
+  return usage.ru_maxrss;
+}
+
+
 static void
 setup_logging(int argc, char* argv[]) {
   START_EASYLOGGINGPP(argc, argv);
@@ -49,6 +76,7 @@ usage(const char *progname, int err) {
     << "    --log-interval SECONDS Report on state regularly." << std::endl
     << "    --obj-in               Input is an obj file, potentially with already segments/faces to improve" << std::endl
     << "    --initial-unconstrain-only  Only do an initial unconstrain; no hole shooting; no improvement loops" << std::endl
+    << "    --status-fd <FD>       File-Descriptor number to print statistics to." << std::endl
     << "    --hole_size_base"                                  " (default: " << DECL::default_hole_size_base << ")" << std::endl
     << "    --hole_size_geometric_param"                       " (default: " << DECL::default_hole_size_geometric_param << ")" << std::endl
     << "    --flip_nums_exponent"                              " (default: " << DECL::default_flip_nums_exponent << ")" << std::endl
@@ -87,6 +115,8 @@ int main(int argc, char *argv[]) {
     { "log-interval", required_argument, 0, 'L'},
     { "obj-in",       no_argument      , 0, 'O'},
     { "initial-unconstrain-only", no_argument      , 0, 'H'},
+    { "status-fd"   , required_argument, 0, '8'},
+
     { "hole_size_base", required_argument, 0, '1'},
     { "hole_size_geometric_param", required_argument, 0, '2'},
     { "flip_nums_exponent", required_argument, 0, '3'},
@@ -110,6 +140,7 @@ int main(int argc, char *argv[]) {
   int max_time = 0;
   bool obj_in = false;
   bool initial_unconstrain_only = false;
+  int status_fd = -1;
 
   unsigned hole_size_base = DECL::default_hole_size_base;;
   double hole_size_geometric_param = DECL::default_hole_size_geometric_param;
@@ -191,6 +222,10 @@ int main(int argc, char *argv[]) {
         max_iters = atol(optarg);
         break;
 
+      case '8':
+        status_fd = atol(optarg);
+        break;
+
       case 'H':
         initial_unconstrain_only = true;
         break;
@@ -247,6 +282,9 @@ int main(int argc, char *argv[]) {
   std::cout << "random_seed: " << seed << std::endl << std::flush;
   random_engine.seed(seed);
 
+  double start_rtime = get_current_rtime();
+  auto start_hirestime = Clock::now();
+
   std::unique_ptr<DECL> decl;
   if (obj_in) {
     std::pair<VertexList, InputEdgeSet> p = load_obj(*in);
@@ -269,6 +307,7 @@ int main(int argc, char *argv[]) {
   }
   initial_to_beat = initial_to_beat ? initial_to_beat : decl->get_num_faces();
   unsigned to_beat = initial_to_beat;
+
   if (initial_unconstrain_only) {
     decl->one_initial_unconstrain_only();
     std::cout << "exit_reason: initial-unconstrain-only" << std::endl;
@@ -327,6 +366,25 @@ int main(int argc, char *argv[]) {
         break;
       }
     }
+  }
+
+  if (status_fd >= 0) {
+    double end_rtime = get_current_rtime();
+    auto end_hirestime = Clock::now();
+    long rmem = get_maxrss();
+     FILE *status = fdopen(status_fd, "a");
+     if (!status) {
+        LOG(ERROR) << "Cannot open status FD " << status_fd << ": " << strerror(errno);
+        exit(-1);
+     }
+
+     fprintf(status, "[STATUS] VERSION: %s\n", GITVERSION);
+     fprintf(status, "[STATUS] GENERATOR: mcd-recurse%s\n", initial_unconstrain_only ? "-init" : "");
+     fprintf(status, "[STATUS] INPUT_SIZE: %d\n", decl->get_num_vertices());
+     fprintf(status, "[STATUS] CPUTIME: %.6lf\n", end_rtime - start_rtime);
+     fprintf(status, "[STATUS] WALLTIME: %.9lf\n",
+       double(std::chrono::duration_cast<std::chrono::nanoseconds>(end_hirestime - start_hirestime).count())/1e9);
+     fprintf(status, "[STATUS] MAXRSS: %ld\n", rmem);
   }
 
   DBG(DBG_GENERIC) << "Random seed was " << seed;
