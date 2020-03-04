@@ -19,8 +19,6 @@ const double DECL::default_flip_nums_exponent = 1./5;
 const double DECL::default_start_hole_at_higher_degree_vertex_probability = 0.75;
 const double DECL::default_num_iterations_exponent = 1.;
 
-/*seconds*/
-
 static void
 setup_logging(int argc, char* argv[]) {
   START_EASYLOGGINGPP(argc, argv);
