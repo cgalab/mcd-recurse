@@ -47,8 +47,10 @@ usage(const char *progname, int err) {
     << "    --improve-time SECONDS After beating TO_BEAT, work on it for at least this long" << std::endl
     << "    --improve-max RUNS     Try at most RUNS runs/attempts at solving this before beating TO_BEAT" << std::endl
     << "    --max-time NUM         Do not start a new run after NUM seconds (overrides improve-* bounds)" << std::endl
+    << "    --max-iters NUM        Do at most NUM iterations, whether we improve things or not." << std::endl
     << "    --log-interval SECONDS Report on state regularly." << std::endl
     << "    --obj-in               Input is an obj file, potentially with already segments/faces to improve" << std::endl
+    << "    --initial-unconstrain-only  Only do an initial unconstrain; no hole shooting; no improvement loops" << std::endl
     << "    --hole_size_base"                                  " (default: " << DECL::default_hole_size_base << ")" << std::endl
     << "    --hole_size_geometric_param"                       " (default: " << DECL::default_hole_size_geometric_param << ")" << std::endl
     << "    --flip_nums_exponent"                              " (default: " << DECL::default_flip_nums_exponent << ")" << std::endl
@@ -71,7 +73,7 @@ signalHandler( int signum ) {
 }
 
 int main(int argc, char *argv[]) {
-  const char * const short_options = "hS:fb:B:I:i:T:L:M:OFH:";
+  const char * const short_options = "h";
   const option long_options[] = {
     { "help"        , no_argument      , 0, 'h'},
     { "seed"        , required_argument, 0, 'S'},
@@ -83,8 +85,10 @@ int main(int argc, char *argv[]) {
     { "improve-time", required_argument, 0, 'i'},
     { "improve-max" , required_argument, 0, 'M'},
     { "max-time"    , required_argument, 0, 'T'},
+    { "max-iters"   , required_argument, 0, '9'},
     { "log-interval", required_argument, 0, 'L'},
     { "obj-in",       no_argument      , 0, 'O'},
+    { "initial-unconstrain-only", no_argument      , 0, 'H'},
     { "hole_size_base", required_argument, 0, '1'},
     { "hole_size_geometric_param", required_argument, 0, '2'},
     { "flip_nums_exponent", required_argument, 0, '3'},
@@ -104,8 +108,10 @@ int main(int argc, char *argv[]) {
   unsigned improvement_time = 0;
   unsigned improvement_runs_max = 100000;
   unsigned log_interval = 60;
+  unsigned max_iters = 0;
   int max_time = 0;
   bool obj_in = false;
+  bool initial_unconstrain_only = false;
 
   unsigned hole_size_base = DECL::default_hole_size_base;;
   double hole_size_geometric_param = DECL::default_hole_size_geometric_param;
@@ -183,6 +189,14 @@ int main(int argc, char *argv[]) {
         num_iterations_exponent = std::stod(optarg);
         break;
 
+      case '9':
+        max_iters = atol(optarg);
+        break;
+
+      case 'H':
+        initial_unconstrain_only = true;
+        break;
+
       default:
         std::cerr << "Invalid option " << (char)r << std::endl;
         exit(1);
@@ -257,54 +271,63 @@ int main(int argc, char *argv[]) {
   }
   initial_to_beat = initial_to_beat ? initial_to_beat : decl->get_num_faces();
   unsigned to_beat = initial_to_beat;
-  while (1) {
-    decl->assert_valid();
-    decl->find_convex_decomposition();
-    decl->assert_valid();
+  if (initial_unconstrain_only) {
+    decl->one_initial_unconstrain_only();
+    std::cout << "exit_reason: initial-unconstrain-only" << std::endl;
+  } else {
+    while (1) {
+      decl->assert_valid();
+      decl->find_convex_decomposition();
+      decl->assert_valid();
 
-    ++num_iters;
-    ++num_iters_since_improved;
+      ++num_iters;
+      ++num_iters_since_improved;
 
-    auto now = std::chrono::system_clock::now();
-    unsigned this_num_faces = decl->get_num_faces();
+      auto now = std::chrono::system_clock::now();
+      unsigned this_num_faces = decl->get_num_faces();
 
-    if (this_num_faces < to_beat) {
-      have_solution = true;
-      num_iters_since_improved = 0;
-      solution_found_at = now;
-      to_beat = this_num_faces;
-    }
-
-    if (now > last_info_time + info_interval) {
-      if (have_solution) {
-        LOG(INFO) << "Iter " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved; This num faces " << this_num_faces << "; to beat: " << to_beat << "; initial to beat: " << initial_to_beat;
-      } else {
-        LOG(INFO) << "Iter " << num_iters << " overall; This num faces " << this_num_faces << "; to beat: " << to_beat;
+      if (this_num_faces < to_beat) {
+        have_solution = true;
+        num_iters_since_improved = 0;
+        solution_found_at = now;
+        to_beat = this_num_faces;
       }
-      last_info_time = now;
-    }
 
-    if (UNLIKELY(this_num_faces <= lower_bound)) {
-      LOG(INFO) << "We hit the lower bound of " << lower_bound;
-      std::cout << "exit_reason: lower_bound" << std::endl;
-      break;
-    } else if (UNLIKELY(have_solution && (num_iters_since_improved >= improvement_runs) && (now > solution_found_at + std::chrono::seconds(improvement_time)))) {
-      LOG(INFO) << "We ran for " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved.  We did improve on " << initial_to_beat << " faces by " << (initial_to_beat - this_num_faces);
-      std::cout << "exit_reason: found-after-improvement_runs" << std::endl;
-      std::cout << "improvement_runs: " << improvement_runs << std::endl;
-      std::cout << "improvement_time: " << improvement_time << std::endl;
-      break;
-    } else if (UNLIKELY(!have_solution && num_iters_since_improved >= improvement_runs_max)) {
-      LOG(INFO) << "We ran for " << num_iters_since_improved << " without improving on " << initial_to_beat;
-      std::cout << "exit_reason: not-found-after-improvement_runs-max" << std::endl;
-      break;
-    } else if (UNLIKELY(max_time != 0 && now > end_time)) {
-      LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " iterations total.)";
-      std::cout << "exit_reason: timeout" << std::endl;
-      break;
-    } else if (UNLIKELY(main_loop_interrupted)) {
-      std::cout << "exit_reason: interrupt" << std::endl;
-      break;
+      if (now > last_info_time + info_interval) {
+        if (have_solution) {
+          LOG(INFO) << "Iter " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved; This num faces " << this_num_faces << "; to beat: " << to_beat << "; initial to beat: " << initial_to_beat;
+        } else {
+          LOG(INFO) << "Iter " << num_iters << " overall; This num faces " << this_num_faces << "; to beat: " << to_beat;
+        }
+        last_info_time = now;
+      }
+
+      if (UNLIKELY(this_num_faces <= lower_bound)) {
+        LOG(INFO) << "We hit the lower bound of " << lower_bound;
+        std::cout << "exit_reason: lower_bound" << std::endl;
+        break;
+      } else if (UNLIKELY(have_solution && (num_iters_since_improved >= improvement_runs) && (now > solution_found_at + std::chrono::seconds(improvement_time)))) {
+        LOG(INFO) << "We ran for " << num_iters << " overall and " << num_iters_since_improved << "/" << improvement_runs << " since improved.  We did improve on " << initial_to_beat << " faces by " << (initial_to_beat - this_num_faces);
+        std::cout << "exit_reason: found-after-improvement_runs" << std::endl;
+        std::cout << "improvement_runs: " << improvement_runs << std::endl;
+        std::cout << "improvement_time: " << improvement_time << std::endl;
+        break;
+      } else if (UNLIKELY(!have_solution && num_iters_since_improved >= improvement_runs_max)) {
+        LOG(INFO) << "We ran for " << num_iters_since_improved << " without improving on " << initial_to_beat;
+        std::cout << "exit_reason: not-found-after-improvement_runs-max" << std::endl;
+        break;
+      } else if (UNLIKELY(max_time != 0 && now > end_time)) {
+        LOG(INFO) << "We ran for max-time of " << max_time << " seconds.  (We did " << num_iters << " iterations total.)";
+        std::cout << "exit_reason: timeout" << std::endl;
+        break;
+      } else if (UNLIKELY(max_iters > 0 && num_iters >= max_iters)) {
+        LOG(INFO) << "We ran for max iters of " << num_iters << " iterations total.)";
+        std::cout << "exit_reason: max_iters" << std::endl;
+        break;
+      } else if (UNLIKELY(main_loop_interrupted)) {
+        std::cout << "exit_reason: interrupt" << std::endl;
+        break;
+      }
     }
   }
 

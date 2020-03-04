@@ -575,6 +575,15 @@ class DECL {
 
     void reset_constraints();
     void find_convex_decomposition();
+    void one_initial_unconstrain_only() {
+      if (!initial_constrained && working_set.num_my_triangles == num_faces) {
+        flip_random_edges_and_reset_constraints();
+        unconstrain_random_edges();
+      } else {
+        LOG(ERROR) << "Cannot run initial unconstrain while improving existing decompositions";
+        exit(1);
+      }
+    }
 
     void write_obj_segments(bool dump_vertices, bool face_based, std::ostream &o);
     unsigned get_num_faces() const { return num_faces; }
