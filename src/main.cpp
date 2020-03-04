@@ -308,7 +308,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  DBG(DBG_GENERIC) << "Random seed was" << seed;
+  DBG(DBG_GENERIC) << "Random seed was " << seed;
   std::cout << "num_cvx_areas: " << decl->get_num_faces() << std::endl;
   std::cout << "num_iters: " << num_iters << std::endl;
   auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - solution_found_at);
